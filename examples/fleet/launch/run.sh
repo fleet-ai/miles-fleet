@@ -18,6 +18,8 @@ set -euo pipefail
 : "${RUN_ID:?RUN_ID must be set}"
 : "${TASKSET_REF:?TASKSET_REF must be set}"
 TASK_LIMIT="${TASK_LIMIT:-0}"
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd -- "$SCRIPT_DIR/../../.." && pwd)
 
 RUN_DIR=/mnt/sfs/miles-fleet/${RUN_ID}
 mkdir -p "$RUN_DIR"
@@ -60,7 +62,7 @@ curl -fsS --retry 10 --retry-delay 30 --retry-all-errors -H "Authorization: Bear
   > ~/.flt/image-locations/sha256/$ROOT_BARE.json
 echo "image-locations plan written for $ROOT"
 
-cd /root/miles
+cd "$REPO_ROOT"
 python -m examples.fleet.prepare_dataset \
   --taskset-ref taskset --output-dir "$RUN_DIR/data" --max-tasks "$TASK_LIMIT"
 
