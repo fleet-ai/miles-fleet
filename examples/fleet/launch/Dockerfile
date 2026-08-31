@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # miles trainer image for Fleet training.
 #
 # Base is the official miles image (pinned sglang/Megatron/kernels). The cu12
@@ -6,15 +7,17 @@
 # flt binary from the SAME platform commit (client and SDK must agree on the
 # taskset schema), and a docker CLI (the daemon is the pod's dind sidecar).
 #
-# Build from the REPO ROOT with a token that reads fleet-ai/platform:
+# Build from the REPO ROOT with the read-only fleet-ai/platform deploy key
+# loaded in an SSH agent:
 #   DOCKER_BUILDKIT=1 docker build -f examples/fleet/launch/Dockerfile \
-#     --secret id=gh_token,env=GH_TOKEN .
+#     --ssh default .
 
 FROM golang:1.26 AS flt-builder
 ARG PLATFORM_REF=72e656c948ab3dbc018c844b76b93bfb297f2061
-RUN --mount=type=secret,id=gh_token \
-    git config --global url."https://x-access-token:$(cat /run/secrets/gh_token)@github.com/".insteadOf "https://github.com/" \
-    && git clone --filter=blob:none https://github.com/fleet-ai/platform /src \
+RUN install -d -m 0700 /root/.ssh \
+    && printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > /root/.ssh/known_hosts
+RUN --mount=type=ssh \
+    git clone --filter=blob:none git@github.com:fleet-ai/platform.git /src \
     && cd /src && git checkout -q ${PLATFORM_REF} \
     && cd registry && CGO_ENABLED=0 go build -o /flt ./cmd/flt
 
@@ -27,6 +30,9 @@ RUN --mount=type=secret,id=gh_token \
 FROM radixark/miles@sha256:66725f740a6013b00d27e21fdfd480a24b0d3b5c61840342e9405bf1e09e5162
 ARG PLATFORM_REF=72e656c948ab3dbc018c844b76b93bfb297f2061
 
+RUN install -d -m 0700 /root/.ssh \
+    && printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > /root/.ssh/known_hosts
+
 # docker CLI only (daemon = dind sidecar via DOCKER_HOST)
 RUN curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz \
     | tar -xz --strip-components=1 -C /usr/local/bin docker/docker
@@ -38,10 +44,8 @@ COPY . /root/miles
 RUN cd /root/miles && pip install -e . --no-deps
 
 # fleet-runtime pinned to the exact commit the flt binary is built from.
-RUN --mount=type=secret,id=gh_token \
-    git config --global url."https://x-access-token:$(cat /run/secrets/gh_token)@github.com/".insteadOf "https://github.com/" \
-    && pip install "fleet-runtime @ git+https://github.com/fleet-ai/platform.git@${PLATFORM_REF}#subdirectory=runtime" \
-    && (git config --global --unset-all url."https://x-access-token:$(cat /run/secrets/gh_token)@github.com/".insteadOf || true)
+RUN --mount=type=ssh \
+    pip install "fleet-runtime @ git+ssh://git@github.com/fleet-ai/platform.git@${PLATFORM_REF}#subdirectory=runtime"
 
 COPY --from=flt-builder /flt /usr/local/bin/flt
 ENV FLEET_FLT=/usr/local/bin/flt

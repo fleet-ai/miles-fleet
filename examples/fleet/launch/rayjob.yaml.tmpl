@@ -97,7 +97,7 @@ spec:
           tolerations:
             - {key: workload, operator: Exists, effect: NoSchedule}
           imagePullSecrets:
-            - name: ghcr-pull
+            - name: ${IMAGE_PULL_SECRET}
           volumes:
             - name: sfs
               persistentVolumeClaim: {claimName: sfs-shared}
@@ -179,7 +179,7 @@ spec:
             tolerations:
               - {key: workload, operator: Exists, effect: NoSchedule}
             imagePullSecrets:
-              - name: ghcr-pull
+              - name: ${IMAGE_PULL_SECRET}
             volumes:
               - name: sfs
                 persistentVolumeClaim: {claimName: sfs-shared}

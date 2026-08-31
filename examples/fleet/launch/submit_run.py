@@ -12,7 +12,11 @@ whatever `command` invokes.
 
 Payload:
     name             run and RayJob name (DNS-safe label)
-    image            ghcr.io/fleet-ai/miles-fleet/trainer:<sha>
+    image            optional; defaults to the Fleet ECR digest in
+                     default-image.txt. Custom images must name their own
+                     immutable image.
+    image_pull_secret optional; defaults to ecr-pull. Custom image owners
+                     must supply a secret that can read their registry.
     command          what to run; no apostrophes (single-quoted entrypoint)
     workers          number of GPU pods; with gpus_per_worker=8 one pod fills
                      one node, so workers = machines
@@ -34,6 +38,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+DEFAULT_IMAGE = (HERE / "default-image.txt").read_text().strip()
 
 # A pool names a set of identical GPU machines and the cluster that hosts
 # them. gpu-b300 is the Nebius production cluster (fleetai-training,
@@ -61,9 +66,19 @@ def _fail(msg: str) -> None:
 
 def _load_payload(path: str) -> dict:
     payload = json.loads(Path(path).read_text())
-    for field in ("name", "image", "command", "workers", "gpus_per_worker"):
+    for field in ("name", "command", "workers", "gpus_per_worker"):
         if field not in payload:
             _fail(f"payload is missing '{field}'")
+    payload.setdefault("image", DEFAULT_IMAGE)
+    payload.setdefault("image_pull_secret", "ecr-pull")
+    if not isinstance(payload["image"], str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,511}", payload["image"]
+    ):
+        _fail("image must be one OCI image reference without whitespace")
+    if not isinstance(payload["image_pull_secret"], str) or not re.fullmatch(
+        r"[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?", payload["image_pull_secret"]
+    ):
+        _fail("image_pull_secret must be a DNS-safe Kubernetes Secret name")
     if not re.fullmatch(r"[a-z0-9]([a-z0-9-]{0,50}[a-z0-9])?", payload["name"]):
         _fail("name must be a short DNS-safe label (lowercase alphanumerics and dashes)")
     if not (isinstance(payload["workers"], int) and payload["workers"] >= 1):
@@ -92,6 +107,7 @@ def _render(payload: dict) -> str:
         "JOB_NAME": payload["name"],
         "SECRET_NAME": f"{payload['name']}-secrets",
         "IMAGE": payload["image"],
+        "IMAGE_PULL_SECRET": payload["image_pull_secret"],
         "COMMAND": payload["command"],
         "WORKER_REPLICAS": str(payload["workers"] - 1),
         "NUM_GPUS": str(payload["gpus_per_worker"]),
