@@ -2,11 +2,12 @@
 
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any, Dict, Optional
+from typing import Any
 
 import pytest
 
-from examples.fleet.prepare_dataset import build_rows, eligible, seed_bytes, split_rows
+from examples.fleet.authoritative import AUTHORITATIVE_BACKEND, SAFE_SUCCESS_OBJECTIVE
+from examples.fleet.prepare_dataset import build_rows, seed_bytes, split_rows
 
 
 # ------------------------------------------------------------- fake taskset
@@ -14,7 +15,7 @@ from examples.fleet.prepare_dataset import build_rows, eligible, seed_bytes, spl
 
 @dataclass
 class FakeStep:
-    prompt: Optional[str] = "do it"
+    prompt: str | None = "do it"
 
 
 @dataclass
@@ -28,7 +29,7 @@ class FakeSeed:
 @dataclass
 class FakeEnv:
     image_ref: str = "registry/app:1"
-    seed: Optional[FakeSeed] = None
+    seed: FakeSeed | None = None
 
 
 @dataclass
@@ -37,8 +38,9 @@ class FakeTask:
     steps: tuple = (FakeStep(),)
     seats: tuple = ("seat1",)
     is_attempt_capable: bool = True
-    environments: Dict[str, Any] = field(default_factory=lambda: {"env": FakeEnv()})
+    environments: dict[str, Any] = field(default_factory=lambda: {"env": FakeEnv()})
     context_profile: str = "continuous"
+    verifiers: tuple = ()
 
 
 @dataclass
@@ -117,6 +119,47 @@ def test_max_tasks_subsets_deterministically():
     rows2, _ = build_rows(ts, "r", make_args(max_tasks=5))
     assert len(rows1) == 5
     assert [r["label"] for r in rows1] == [r["label"] for r in rows2]
+
+
+def test_authoritative_rows_carry_exact_taskdump_v7_binding():
+    task_key = "cyber-example__blackbox_ctf_v1"
+    provenance = {
+        "task_key": task_key,
+        "task_version_id": "11111111-1111-4111-8111-111111111111",
+        "environment_version_id": "22222222-2222-4222-8222-222222222222",
+        "verifier_version_id": "33333333-3333-4333-8333-333333333333",
+        "environment_key": "cysec1",
+        "environment_version": "v1",
+        "data_key": "seed",
+        "data_version": "v2",
+    }
+    verifier = SimpleNamespace(evaluator=SimpleNamespace(params={"task": provenance}))
+    task = FakeTask(task_id=task_key, verifiers=(verifier,))
+    args = make_args(
+        backend=AUTHORITATIVE_BACKEND,
+        reward_objective=SAFE_SUCCESS_OBJECTIVE,
+    )
+
+    rows, skipped = build_rows(FakeTaskset(tasks=[FakeCompiled(task)]), "ref://sha256", args)
+
+    assert skipped == []
+    metadata = rows[0]["metadata"]
+    assert metadata["fleet_backend"] == AUTHORITATIVE_BACKEND
+    assert metadata["reward_objective"] == SAFE_SUCCESS_OBJECTIVE
+    assert metadata["task_version_id"] == provenance["task_version_id"]
+    assert metadata["environment_version_id"] == provenance["environment_version_id"]
+    assert metadata["verifier_version_id"] == provenance["verifier_version_id"]
+    assert metadata["task_prompt"] == "do it"
+
+
+def test_authoritative_rows_reject_missing_immutable_binding():
+    task = FakeTask(task_id="cyber-example__blackbox_ctf_v1")
+    args = make_args(
+        backend=AUTHORITATIVE_BACKEND,
+        reward_objective=SAFE_SUCCESS_OBJECTIVE,
+    )
+    with pytest.raises(ValueError, match="exactly one TaskDump v7 binding"):
+        build_rows(FakeTaskset(tasks=[FakeCompiled(task)]), "ref://sha256", args)
 
 
 # ------------------------------------------------------------------ split
