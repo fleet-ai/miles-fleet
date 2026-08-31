@@ -20,6 +20,7 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: fleet/miles-trainer
+  ECR_CACHE_REPOSITORY: fleet/miles-trainer-cache
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -73,12 +74,27 @@ jobs:
       - name: Select image identity
         id: image
         run: |
-          SHORT_SHA=$(git rev-parse --short=8 HEAD)
-          echo "tag=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          SOURCE_SHA=$(git rev-parse HEAD)
+          echo "tag=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "uri=miles-trainer:$SHORT_SHA" >> "$GITHUB_OUTPUT"
+            echo "uri=miles-trainer:$SOURCE_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "uri=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$SHORT_SHA" >> "$GITHUB_OUTPUT"
+            echo "uri=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check for an existing trusted image
+        if: github.event_name != 'pull_request'
+        id: existing_image
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          if aws ecr describe-images \
+            --repository-name "${{ env.ECR_REPOSITORY }}" \
+            --image-ids "imageTag=$IMAGE_TAG" \
+            --region "${{ env.AWS_REGION }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build the pull request image
@@ -94,7 +110,7 @@ jobs:
             .
 
       - name: Build and push the trusted image
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && steps.existing_image.outputs.exists != 'true'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
@@ -104,8 +120,8 @@ jobs:
             --platform linux/amd64 \
             --file examples/fleet/launch/Dockerfile \
             --ssh default \
-            --cache-from "type=registry,ref=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:buildcache" \
-            --cache-to "type=registry,ref=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:buildcache,mode=max" \
+            --cache-from "type=registry,ref=$ECR_REGISTRY/${{ env.ECR_CACHE_REPOSITORY }}:buildcache" \
+            --cache-to "type=registry,ref=$ECR_REGISTRY/${{ env.ECR_CACHE_REPOSITORY }}:buildcache,mode=max" \
             --tag "$IMAGE_URI" \
             --push \
             .
