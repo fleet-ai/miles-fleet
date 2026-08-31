@@ -115,8 +115,8 @@ same lock.
 The `Build Fleet Trainer` GitHub Actions workflow builds each trusted
 `glm53-bu` or `main` commit. It pushes the source-SHA tag to
 `661864827319.dkr.ecr.us-east-1.amazonaws.com/fleet/miles-trainer` and writes
-the immutable digest to the workflow summary. Pull requests build the image
-but do not receive AWS credentials and do not push.
+the immutable digest to the workflow summary. Pull requests only validate
+the Dockerfile; they receive neither the deploy key nor AWS credentials.
 
 After the trusted build passes, update `launch/default-image.txt` with the
 reported `repository@sha256:digest` value in a reviewed pull request. This
