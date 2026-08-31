@@ -219,14 +219,18 @@ _RECIPES: dict[str, _Recipe] = {
             # nodes have 2.7TB RAM but only ~956GB node disk, which filled
             # and killed the offload after step 0 (attempt 10, 2026-08-29).
             "--offload-train-target cpu "
-            # TRAIN ACTORS ONLY (actor_factory.py applies this dict to them
-            # and nothing else), which is the whole point: the engines die on
-            # expandable segments because torch_memory_saver cannot release
-            # them. The trainer has the opposite problem. At the step-2 OOM
-            # 8.91 GB was reserved by the caching allocator but unallocated,
-            # so free memory sat in blocks smaller than the 1.50 GB the KDA
-            # backward kernel asked for. One growable mapping strands less.
-            """--train-env-vars '{"PYTORCH_CUDA_ALLOC_CONF":"expandable_segments:True"}' """
+            # NO expandable_segments ANYWHERE IN THE COLOCATED PATH, in this
+            # dict or in env_extra. Both sides refuse it, for the same reason
+            # and at startup:
+            #   RuntimeError: TorchMemorySaver is disabled for the current
+            #   process because expandable_segments is not supported yet.
+            # The engines are slept and woken through torch_memory_saver, and
+            # --offload-train-target cpu above offloads the TRAINER through it
+            # too, so scoping the flag to the train actors does not help: it
+            # kills MegatronTrainRayActor.init instead of the engines (measured
+            # twice, 2026-08-30 env_extra and 2026-08-31 --train-env-vars).
+            # The Qwen recipe in this file can use it only because FSDP there
+            # runs without the memory saver.
             "--model-name glm5_next "
             "--qkv-format thd "
             "--rollout-health-check-interval 300 "
