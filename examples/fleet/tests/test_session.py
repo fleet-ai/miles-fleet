@@ -3,15 +3,12 @@ outcomes, prepare retry, schema budget, and the step protocol."""
 
 import time
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
-
-import pytest
-
-import fleet_runtime.harness.reference as harness_reference
+from typing import Any
 
 import examples.fleet.session as session_mod
-from examples.fleet.session import FleetSession, SessionConfig, _within_budget, TOOLS_JSON_MAX_CHARS
-
+import fleet_runtime.harness.reference as harness_reference
+import pytest
+from examples.fleet.session import TOOLS_JSON_MAX_CHARS, FleetSession, SessionConfig, _within_budget
 
 # --------------------------------------------------------------- stub SDK
 
@@ -37,14 +34,14 @@ class FakeBlob:
 class FakeResult:
     content: tuple = ()
     status: str = "ok"
-    error_code: Optional[str] = None
+    error_code: str | None = None
 
 
 class FakeChannel:
-    def __init__(self, results: Optional[List[Any]] = None):
+    def __init__(self, results: list[Any] | None = None):
         self.results = results or []
-        self.calls: List[tuple] = []
-        self.submitted: List[str] = []
+        self.calls: list[tuple] = []
+        self.submitted: list[str] = []
         self.blob_bytes = b"\x89PNG-fake"
 
     def call_tool(self, name, args):
@@ -75,7 +72,7 @@ class FakeVerification:
 @dataclass
 class FakeReport:
     ok: bool = True
-    failure: Optional[str] = None
+    failure: str | None = None
     verifications: tuple = ()
 
 
@@ -93,12 +90,14 @@ class FakeInnerSession:
         self.step_ordinal = 1
         self.step_count = step_count
         self.pending_reset_ack = None
-        self.completed: List[Optional[str]] = []
+        self.completed: list[str | None] = []
         self._advances = advances or []
 
     def complete_step(self, *, reset_ack=None):
         self.completed.append(reset_ack)
-        advance = self._advances.pop(0) if self._advances else FakeAdvance(continues=False, next_context="stop", prompt=None)
+        advance = (
+            self._advances.pop(0) if self._advances else FakeAdvance(continues=False, next_context="stop", prompt=None)
+        )
         if isinstance(advance, Exception):
             raise advance
         if str(advance.next_context).endswith("reset"):
@@ -113,7 +112,9 @@ class FakeInnerSession:
         pass
 
 
-def make_session(monkeypatch, report=None, results=None, step_count=1, advances=None, has_steps=False, **cfg) -> FleetSession:
+def make_session(
+    monkeypatch, report=None, results=None, step_count=1, advances=None, has_steps=False, **cfg
+) -> FleetSession:
     session = FleetSession("ts", "t1", SessionConfig(**cfg))
     session._channel = FakeChannel(results=results)
     session._task = type("T", (), {"has_step_evidence": has_steps})()
@@ -273,13 +274,23 @@ def test_close_step_reset_carries_ack(monkeypatch):
 
 
 def test_close_step_stop(monkeypatch):
-    session = make_session(monkeypatch, step_count=3, has_steps=True, advances=[FakeAdvance(continues=False, next_context="stop", prompt=None)])
+    session = make_session(
+        monkeypatch,
+        step_count=3,
+        has_steps=True,
+        advances=[FakeAdvance(continues=False, next_context="stop", prompt=None)],
+    )
     info = session.close_step(None)
     assert info.continues is False
 
 
 def test_grade_closes_final_step_for_step_protocol(monkeypatch):
-    session = make_session(monkeypatch, step_count=2, has_steps=True, advances=[FakeAdvance(continues=False, next_context="not_applicable", prompt=None)])
+    session = make_session(
+        monkeypatch,
+        step_count=2,
+        has_steps=True,
+        advances=[FakeAdvance(continues=False, next_context="not_applicable", prompt=None)],
+    )
     session.grade("42", reset_ack="sha256:prev", close_final_step=True)
     assert session._session.completed == ["sha256:prev"]
     assert session._channel.submitted == ["42"]
@@ -355,6 +366,7 @@ def test_call_tool_timeout_is_fatal(monkeypatch):
     class SlowChannel:
         def call_tool(self, name, arguments):
             import time
+
             time.sleep(0.5)
 
     session._channel = SlowChannel()
@@ -376,6 +388,7 @@ def test_prepare_retry_sweeps_between_attempts(monkeypatch):
             raise RuntimeError("docker slow")
 
     import pytest
+
     with pytest.raises(RuntimeError, match="after 3 attempts"):
         S._prepare_with_retry(FailingRuntime(), task=None, source=None, task_key="t")
     assert len(sweeps) == 3

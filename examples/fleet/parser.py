@@ -37,10 +37,10 @@ and repairs common JSON issues like missing trailing braces.
 
 import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 
-def _try_parse_json(raw: str) -> Optional[Dict[str, Any]]:
+def _try_parse_json(raw: str) -> dict[str, Any] | None:
     """Try to parse JSON, repairing missing trailing braces if needed."""
     raw = raw.strip()
     try:
@@ -117,7 +117,7 @@ def _coerce_param(raw: str) -> Any:
         return raw
 
 
-def _parse_xml_function_call(text: str) -> Optional[Dict[str, Any]]:
+def _parse_xml_function_call(text: str) -> dict[str, Any] | None:
     """Parse the first Qwen3.6-style <function=...> call in `text`."""
     m = _XML_FN_RE.search(text)
     if not m:
@@ -129,7 +129,7 @@ def _parse_xml_function_call(text: str) -> Optional[Dict[str, Any]]:
     return {"name": name, "arguments": args}
 
 
-def _parse_glm_call(payload: str) -> Optional[Dict[str, Any]]:
+def _parse_glm_call(payload: str) -> dict[str, Any] | None:
     """Parse a GLM-family <tool_call> payload: name + arg_key/arg_value pairs.
 
     GLM-4.6 puts the name on its own line; GLM-4.7 emits everything inline
@@ -154,7 +154,7 @@ def _parse_glm_call(payload: str) -> Optional[Dict[str, Any]]:
     return {"name": head, "arguments": args}
 
 
-def _parse_kimi_call(action: str) -> Optional[Dict[str, Any]]:
+def _parse_kimi_call(action: str) -> dict[str, Any] | None:
     """Parse a Kimi-K2 native tool call (first one in the action)."""
     if _KIMI_CALL_BEGIN not in action:
         return None
@@ -172,7 +172,7 @@ def _parse_kimi_call(action: str) -> Optional[Dict[str, Any]]:
     return {"name": name, "arguments": args}
 
 
-def parse_tool_call(action: str) -> Optional[Dict[str, Any]]:
+def parse_tool_call(action: str) -> dict[str, Any] | None:
     """Parse tool call from LLM response.
 
     Tries each known grammar in order; returns the first hit. See module

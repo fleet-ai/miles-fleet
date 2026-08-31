@@ -18,8 +18,11 @@ import re
 import subprocess
 
 _KUBECTL = [
-    "kubectl", "--context", "nebius-mk8s-fleetai-training-e04zw4ye1k7wczqdw6",
-    "-n", "fleet-train-jobs",
+    "kubectl",
+    "--context",
+    "nebius-mk8s-fleetai-training-e04zw4ye1k7wczqdw6",
+    "-n",
+    "fleet-train-jobs",
 ]
 _DEFAULT_IMAGE = "ghcr.io/fleet-ai/miles-fleet/trainer:de27a84a"
 

@@ -24,7 +24,9 @@ from __future__ import annotations
 import logging
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
+
+from examples.fleet.agent import Turn
 
 from miles.rollout.generate_utils.generate_endpoint_utils import (
     compute_request_payload,
@@ -35,12 +37,10 @@ from miles.utils.chat_template_utils.tito_tokenizer import get_tito_tokenizer
 from miles.utils.http_utils import post
 from miles.utils.types import Sample
 
-from examples.fleet.agent import Turn
-
 logger = logging.getLogger(__name__)
 
 
-_TITO_CACHE: Dict[str, Any] = {}
+_TITO_CACHE: dict[str, Any] = {}
 
 
 def _tito_for(state, args):
@@ -57,17 +57,17 @@ class _Segment:
     its token prefix (the TITO tokenizer diffs against these messages)."""
 
     sample: Sample
-    messages: List[Dict[str, Any]]
+    messages: list[dict[str, Any]]
     prompt_len: int
     # vision: per-turn processor outputs (pixel_values etc.), concatenated
     # into sample.multimodal_train_inputs at finalize
-    mm_chunks: List[Dict[str, Any]] = field(default_factory=list)
+    mm_chunks: list[dict[str, Any]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------- segments
 
 
-def _start_segment(tito, base_sample: Sample, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> _Segment:
+def _start_segment(tito, base_sample: Sample, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> _Segment:
     """A fresh training sequence: used for the first step and after every
     reset boundary."""
     sample = deepcopy(base_sample)
@@ -83,11 +83,11 @@ def _start_segment(tito, base_sample: Sample, messages: List[Dict[str, Any]], to
     return _Segment(sample=sample, messages=list(messages), prompt_len=len(prompt_ids))
 
 
-def _record_assistant(segment: _Segment, text: str, tool_call: Optional[Dict[str, Any]], turn: int) -> None:
+def _record_assistant(segment: _Segment, text: str, tool_call: dict[str, Any] | None, turn: int) -> None:
     """Store the sampled turn in the message list so the TITO tokenizer's
     dummy prefix renders the right scaffold (tool_calls make a following
     role-"tool" message legal)."""
-    message: Dict[str, Any] = {"role": "assistant", "content": text}
+    message: dict[str, Any] = {"role": "assistant", "content": text}
     if tool_call is not None:
         message["tool_calls"] = [
             {
@@ -99,7 +99,7 @@ def _record_assistant(segment: _Segment, text: str, tool_call: Optional[Dict[str
     segment.messages.append(message)
 
 
-def _append_messages(segment: _Segment, tito, new_messages: List[Dict[str, Any]]) -> None:
+def _append_messages(segment: _Segment, tito, new_messages: list[dict[str, Any]]) -> None:
     """Append observation messages to the segment's token sequence with loss
     mask 0, via the TITO tokenizer's family-specific merge (which may trim a
     trailing ambiguous boundary token off the sampled prefix)."""
@@ -125,7 +125,7 @@ def _append_messages(segment: _Segment, tito, new_messages: List[Dict[str, Any]]
 # --------------------------------------------------------------------- vision
 
 
-def _data_urls_to_pil(urls: List[str]) -> List[Any]:
+def _data_urls_to_pil(urls: list[str]) -> list[Any]:
     import base64
     import io
 
@@ -159,7 +159,7 @@ def _boundary_fix(tito, sample: Sample) -> None:
         sample.rollout_log_probs = sample.rollout_log_probs[:-1]
 
 
-def _append_multimodal(segment: _Segment, tito, state, message: Dict[str, Any], images: List[Any]) -> None:
+def _append_multimodal(segment: _Segment, tito, state, message: dict[str, Any], images: list[Any]) -> None:
     """Append an observation that carries images: render the message under
     the constant dummy prefix, expand image tokens with the PROCESSOR, trim
     the prefix by its tokenizer length (image expansion only happens after
@@ -177,9 +177,7 @@ def _append_multimodal(segment: _Segment, tito, state, message: Dict[str, Any], 
 
     processor_output = state.processor(text=full_text, images=images)
     ids = list(processor_output["input_ids"][0])[trim:]
-    chunk = {
-        k: v for k, v in processor_output.items() if k not in ("input_ids", "attention_mask")
-    }
+    chunk = {k: v for k, v in processor_output.items() if k not in ("input_ids", "attention_mask")}
     if chunk:
         segment.mm_chunks.append(chunk)
 
@@ -195,11 +193,11 @@ def _append_multimodal(segment: _Segment, tito, state, message: Dict[str, Any], 
     segment.messages.append(message)
 
 
-def _merge_mm_chunks(chunks: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _merge_mm_chunks(chunks: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Concatenate per-turn processor tensors (geo3k's merge)."""
     import torch
 
-    values_by_key: Dict[str, List[Any]] = {}
+    values_by_key: dict[str, list[Any]] = {}
     for chunk in chunks:
         for key, val in (chunk or {}).items():
             if val is not None:
@@ -221,14 +219,14 @@ _VISION_DUMMY_USER = {"role": "user", "content": "dummy"}
 class Recorder:
     """TurnRunner implementation over SGLang /generate and miles Samples."""
 
-    def __init__(self, args, state, base_sample: Sample, sampling_params: Dict[str, Any]):
+    def __init__(self, args, state, base_sample: Sample, sampling_params: dict[str, Any]):
         self.args = args
         self.state = state
         self.base_sample = base_sample
         self.sampling_params = sampling_params
         self.tito = _tito_for(state, args)
         self.url = f"http://{args.sglang_router_ip}:{args.sglang_router_port}/generate"
-        self.segments: List[_Segment] = []
+        self.segments: list[_Segment] = []
 
     @property
     def aborted(self) -> bool:
@@ -236,7 +234,7 @@ class Recorder:
 
     # ------------------------------------------------------------- protocol
 
-    def begin_segment(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> None:
+    def begin_segment(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> None:
         if self.segments and self.segments[-1].sample.status == Sample.Status.PENDING:
             self.segments[-1].sample.status = Sample.Status.COMPLETED
         self.segments.append(_start_segment(self.tito, self.base_sample, messages, tools))
@@ -264,29 +262,27 @@ class Recorder:
             return Turn(text=None, finish="aborted")
         return Turn(text=output["text"], finish="length" if finish == "length" else "ok")
 
-    def append_assistant(self, text: str, tool_call: Optional[Dict[str, Any]], turn: int) -> Dict[str, Any]:
+    def append_assistant(self, text: str, tool_call: dict[str, Any] | None, turn: int) -> dict[str, Any]:
         segment = self.segments[-1]
         _record_assistant(segment, text, tool_call, turn)
         return segment.messages[-1]
 
-    def append_observation(self, message: Dict[str, Any], image_urls: List[str]) -> Dict[str, Any]:
+    def append_observation(self, message: dict[str, Any], image_urls: list[str]) -> dict[str, Any]:
         segment = self.segments[-1]
         if image_urls:
             pils = _data_urls_to_pil(image_urls)
-            message["content"] = [{"type": "text", "text": message["content"]}] + [
-                {"type": "image"} for _ in pils
-            ]
+            message["content"] = [{"type": "text", "text": message["content"]}] + [{"type": "image"} for _ in pils]
             _append_multimodal(segment, self.tito, self.state, message, pils)
         else:
             _append_messages(segment, self.tito, [message])
         return message
 
-    def note_messages(self, messages: List[Dict[str, Any]]) -> None:
+    def note_messages(self, messages: list[dict[str, Any]]) -> None:
         self.segments[-1].sample.metadata["messages"] = list(messages)
 
     # ------------------------------------------------------------- finalize
 
-    def write_off(self, error: Optional[str] = None) -> List[Sample]:
+    def write_off(self, error: str | None = None) -> list[Sample]:
         """Mark everything ABORTED (nothing to train on); with an error, tag
         it so check_no_aborted's rejects are diagnosable. Falls back to the
         base sample when the episode died before its first segment."""
@@ -298,7 +294,7 @@ class Recorder:
                 sample.metadata["episode_error"] = error[:300]
         return samples
 
-    def finalize(self, reward: float, episode_meta: Dict[str, Any], env_time: float) -> List[Sample]:
+    def finalize(self, reward: float, episode_meta: dict[str, Any], env_time: float) -> list[Sample]:
         """Broadcast the episode's terminal reward to every segment, merge
         the per-turn multimodal tensors, and stamp the episode metadata."""
         for index, segment in enumerate(self.segments):

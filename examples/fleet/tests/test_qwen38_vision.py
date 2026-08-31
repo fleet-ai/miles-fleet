@@ -11,11 +11,10 @@ Run: pytest -m network tests/test_qwen38_vision.py
 """
 
 import pytest
+from examples.fleet.recording import _append_multimodal, _boundary_fix, _Segment
 
 from miles.utils.chat_template_utils.tito_tokenizer import get_tito_tokenizer
 from miles.utils.types import Sample
-
-from examples.fleet.recording import _append_multimodal, _boundary_fix, _Segment
 
 pytestmark = pytest.mark.network
 
@@ -105,7 +104,7 @@ def test_multimodal_observation_appends_aligned(stack):
     # sampled tokens keep mask 1 (plus the boundary newline at mask 0)
     assert sum(s.loss_mask) == gen
     # the processor expanded real image tokens into the sequence
-    text = state.tokenizer.decode(s.tokens[segment.prompt_len:])
+    text = state.tokenizer.decode(s.tokens[segment.prompt_len :])
     assert "<|image_pad|>" in text or "image_pad" in text
     assert "Tool result:" in text
     # processor tensors captured for the train-input merge
@@ -137,7 +136,9 @@ def test_text_observation_append_requires_fixed_template():
     stock = AutoTokenizer.from_pretrained(MODEL, trust_remote_code=True)
     stock_tito = get_tito_tokenizer(stock, "qwen35")
     with pytest.raises(ValueError, match="No user query found"):
-        stock_tito.merge_tokens(old, new, stock_tito.apply_chat_template(old, add_generation_prompt=True, tokenize=True))
+        stock_tito.merge_tokens(
+            old, new, stock_tito.apply_chat_template(old, add_generation_prompt=True, tokenize=True)
+        )
 
     prefix = tito.apply_chat_template(old, add_generation_prompt=True, tokenize=True)
     merged = tito.merge_tokens(old, new, prefix)

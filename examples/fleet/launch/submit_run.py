@@ -40,8 +40,12 @@ HERE = Path(__file__).resolve().parent
 # 24 x 8 B300, 268GB per GPU, 2.7TB host RAM, InfiniBand between machines).
 _POOLS = {
     "gpu-b300": dict(
-        KUBE_CONTEXT="nebius-mk8s-fleetai-training-e04zw4ye1k7wczqdw6", CPU_WORKLOAD="fleetai-training-ng-cpu",
-        NODE_WORKLOAD="fleetai-training-ng-gpu", INSTANCE_TYPE="gpu-b300-sxm", MAIN_MEM="1500Gi", MAIN_MEM_LIM="2400Gi",
+        KUBE_CONTEXT="nebius-mk8s-fleetai-training-e04zw4ye1k7wczqdw6",
+        CPU_WORKLOAD="fleetai-training-ng-cpu",
+        NODE_WORKLOAD="fleetai-training-ng-gpu",
+        INSTANCE_TYPE="gpu-b300-sxm",
+        MAIN_MEM="1500Gi",
+        MAIN_MEM_LIM="2400Gi",
     ),
 }
 
@@ -129,7 +133,9 @@ def _create_run_secret(name: str, kubectl: list) -> None:
             literals.append(f"--from-literal={key}={os.environ[key]}")
     manifest = subprocess.run(
         kubectl + ["create", "secret", "generic", f"{name}-secrets", *literals, "--dry-run=client", "-o", "yaml"],
-        check=True, capture_output=True, text=True,
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout
     subprocess.run(kubectl + ["apply", "-f", "-"], input=manifest, check=True, text=True)
 

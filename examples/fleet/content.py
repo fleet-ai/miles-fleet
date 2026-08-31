@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any, Callable, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 # Per-tool-result char cap in observations. Big dbt/SQL outputs at 16K chars
 # (~4K tokens each) fill a 32K context in ~25 turns and end episodes with
@@ -30,7 +31,7 @@ def truncate_text(text: str, max_chars: int = MAX_TOOL_OUTPUT_CHARS) -> str:
     return text[:head] + f"\n\n[TRUNCATED — {elided} chars elided.]\n\n" + text[-tail:]
 
 
-def downscale_image(data: bytes, media_type: str, max_dim: int) -> Tuple[bytes, str]:
+def downscale_image(data: bytes, media_type: str, max_dim: int) -> tuple[bytes, str]:
     """Shrink an image so its longest side is <= max_dim; re-encode as PNG.
 
     Optional payload optimization, not correctness: the model's own processor
@@ -53,9 +54,9 @@ def downscale_image(data: bytes, media_type: str, max_dim: int) -> Tuple[bytes, 
 
 def tool_result_to_content(
     result: Any,
-    read_blob: Optional[Callable[[Any], bytes]] = None,
-    screenshot_max_dim: Optional[int] = None,
-) -> Tuple[str, List[str]]:
+    read_blob: Callable[[Any], bytes] | None = None,
+    screenshot_max_dim: int | None = None,
+) -> tuple[str, list[str]]:
     """Flatten a fleet_runtime ToolResult into (text, image_data_urls).
 
     ToolResult.content is a tuple of ContentBlocks: TextBlock(text=...),
@@ -66,8 +67,8 @@ def tool_result_to_content(
     mirroring the SDK's own grading projection — degrading beats raising
     because the episode already paid for the turn.
     """
-    parts: List[str] = []
-    images: List[str] = []
+    parts: list[str] = []
+    images: list[str] = []
     for block in getattr(result, "content", ()) or ():
         text = getattr(block, "text", None)
         if isinstance(text, str):
