@@ -31,7 +31,7 @@ import torch
 MODEL = "zai-org/GLM-5.3-Flash-BF16"
 IMG = 154854  # <|image|> == hf_config.image_token_id
 
-LAUNCH = Path(__file__).resolve().parent.parent / "launch"
+LAUNCH = Path(__file__).resolve().parents[3] / "examples/fleet/launch"
 
 # ---------------------------------------------------------------------------
 # CPU: the Dockerfile must keep carrying the patch until upstream merges it.

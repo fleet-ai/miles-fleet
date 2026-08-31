@@ -7,7 +7,7 @@ fleet-vision path depends on for the model we plan to train:
 - the qwen35 TITO boundary rule (insert the newline the model stops before)
   keeps mask arithmetic aligned.
 
-Run: pytest -m network tests/test_qwen38_vision.py
+Run: pytest -m network tests/manual/fleet/test_qwen38_vision.py
 """
 
 import pytest
