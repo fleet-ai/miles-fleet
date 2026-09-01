@@ -1,1 +1,1 @@
-661864827319.dkr.ecr.us-east-1.amazonaws.com/fleet/miles-trainer@sha256:fd4eebf10124178332a8c6ae414ce797c24ac831690a7c4eee1a3e07077a2747
+661864827319.dkr.ecr.us-east-1.amazonaws.com/fleet/miles-trainer@sha256:a3ad15ba27a9c4ab76c23b1371626ff115bef12c4c3626edbaea97d0b21f0a65
