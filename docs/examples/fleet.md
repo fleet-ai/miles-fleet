@@ -1,6 +1,6 @@
 ---
 title: "miles on the Fleet training cluster"
-description: "Trains agents on Fleet tasks with multi-turn tool use and verifier rewards."
+description: "Trains agents on Fleet tasks with RayJob launchers and immutable ECR trainer images."
 # Generated from examples/fleet/README.md by scripts/tools/sync_example_docs.py. Edit that README, not this file.
 ---
 Train a model on Fleet tasks: write one JSON file, submit it with one
@@ -66,7 +66,6 @@ variables) plus secrets. Working examples: [`launch/examples/`](https://github.c
 ```json
 {
   "name": "miles-vl-qwen38-2node-01",
-  "image": "ghcr.io/fleet-ai/miles-fleet/trainer:5f74853a",
   "command": "bash examples/fleet/launch/run.sh --model-name qwen3.8-27b --mode normal --num-nodes 2 --num-gpus-per-node 8 --max-turns 32 --max-concurrent-envs 16",
   "workers": 2,
   "gpus_per_worker": 8,
@@ -81,7 +80,8 @@ variables) plus secrets. Working examples: [`launch/examples/`](https://github.c
 | Field | What it is |
 |---|---|
 | `name` | names the job, the folder on `/mnt/sfs`, and the WandB group. Lowercase letters, digits, dashes. |
-| `image` | which trainer image to run (section 6) |
+| `image` | optional image override. The default is the immutable Fleet ECR digest in `launch/default-image.txt`. Custom image owners must publish and support their own image. |
+| `image_pull_secret` | optional Kubernetes registry Secret. The default is `ecr-pull`; custom image owners must supply their own Secret when needed. |
 | `command` | what to run on the head. `run.sh` does setup, then starts training with these arguments. One rule: no apostrophes. |
 | `workers` | how many 8-GPU machines |
 | `gpus_per_worker` | GPUs per machine, normally 8 |
@@ -113,15 +113,23 @@ training job submitted afterwards finds the weights ready. It is safe to
 skip and safe to run concurrently with a training job: both sides take the
 same lock.
 
-## 6. Build the image
+## 6. Build the Fleet image
 
-```bash
-bash examples/fleet/launch/build_image.sh fleet-integration
-# -> ghcr.io/fleet-ai/miles-fleet/trainer:<8-char sha of that ref>
-```
+The `Build Fleet Trainer` GitHub Actions workflow builds each trusted
+`glm53-bu` or `main` commit. It pushes the source-SHA tag to
+`661864827319.dkr.ecr.us-east-1.amazonaws.com/fleet/miles-trainer` and writes
+the immutable digest to the workflow summary. Pull requests only validate
+the Dockerfile; they receive neither the deploy key nor AWS credentials.
 
-The build clones the branch from GitHub, so push first. About 20 minutes.
-A new image is only needed when python under `examples/fleet/` changes.
+After the trusted build passes, update `launch/default-image.txt` with the
+reported `repository@sha256:digest` value in a reviewed pull request. This
+pin file is not part of the Docker build context, so the pin-only change does
+not create a new image.
+
+The workflow uses AWS GitHub OIDC and the read-only
+`FLEET_PLATFORM_DEPLOY_KEY`. It does not use static AWS keys or a broad GitHub
+token. Researchers who need a custom trainer own its repository, CI, image,
+and registry credentials.
 
 The Dockerfile builds on a fixed version of the upstream miles image, not
 the `dev-cu12` tag, because upstream overwrites that tag and one overwrite
@@ -170,7 +178,11 @@ run and resubmit so the queue picks another machine.
 
 ## 9. What has been validated
 
-Smokes on image `trainer:5f74853a` (current); the production runs below launched on its predecessor `97ddfb89`.
+The default ECR image is an exact registry copy of the running
+`e4596378` artifact. Its source and destination digest is
+`sha256:fd4eebf10124178332a8c6ae414ce797c24ac831690a7c4eee1a3e07077a2747`.
+The production validation below ran on earlier artifacts from the same Fleet
+overlay.
 
 | Model | Taskset | Machines | Result |
 |---|---|---|---|

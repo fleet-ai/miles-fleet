@@ -8,7 +8,7 @@ same lock file as the training boot, so a training job submitted later (or
 concurrently) finds the weights hot and skips straight to work.
 
     ./prestage.py zai-org/GLM-5.3-Flash-BF16
-    ./prestage.py Qwen/Qwen3.8-27B --image ghcr.io/fleet-ai/miles-fleet/trainer:<sha>
+    ./prestage.py Qwen/Qwen3.8-27B --image registry.example/trainer@sha256:<digest> --image-pull-secret custom-pull
 
 Idempotent: if the weights are already on /mnt/sfs the job exits in seconds.
 """
@@ -16,6 +16,7 @@ Idempotent: if the weights are already on /mnt/sfs the job exits in seconds.
 import argparse
 import re
 import subprocess
+from pathlib import Path
 
 _KUBECTL = [
     "kubectl",
@@ -24,7 +25,7 @@ _KUBECTL = [
     "-n",
     "fleet-train-jobs",
 ]
-_DEFAULT_IMAGE = "ghcr.io/fleet-ai/miles-fleet/trainer:de27a84a"
+_DEFAULT_IMAGE = (Path(__file__).resolve().parent / "default-image.txt").read_text().strip()
 
 _MANIFEST = """
 apiVersion: batch/v1
@@ -43,7 +44,7 @@ spec:
       tolerations:
         - {{key: workload, operator: Exists, effect: NoSchedule}}
       imagePullSecrets:
-        - name: ghcr-pull
+        - name: {image_pull_secret}
       volumes:
         - name: sfs
           persistentVolumeClaim: {{claimName: sfs-shared}}
@@ -76,11 +77,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repo", help="HF repo, e.g. zai-org/GLM-5.3-Flash-BF16")
     parser.add_argument("--image", default=_DEFAULT_IMAGE, help="image providing the hf CLI")
+    parser.add_argument(
+        "--image-pull-secret",
+        default="ecr-pull",
+        help="Kubernetes Secret for the image registry",
+    )
     args = parser.parse_args()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,511}", args.image):
+        parser.error("--image must be one OCI image reference without whitespace")
+    if not re.fullmatch(r"[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?", args.image_pull_secret):
+        parser.error("--image-pull-secret must be a DNS-safe Kubernetes Secret name")
 
     name = args.repo.split("/", 1)[1]
     job_name = "prestage-" + re.sub(r"[^a-z0-9-]", "-", name.lower()).strip("-")[:40]
-    manifest = _MANIFEST.format(job_name=job_name, image=args.image, repo=args.repo, name=name)
+    manifest = _MANIFEST.format(
+        job_name=job_name,
+        image=args.image,
+        image_pull_secret=args.image_pull_secret,
+        repo=args.repo,
+        name=name,
+    )
     subprocess.run(_KUBECTL + ["delete", "job", job_name, "--ignore-not-found"], check=True)
     subprocess.run(_KUBECTL + ["apply", "-f", "-"], input=manifest, check=True, text=True)
     print(f"watch: kubectl --context {_KUBECTL[2]} -n fleet-train-jobs logs -f job/{job_name}")
