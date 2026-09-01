@@ -31,7 +31,7 @@ import torch
 MODEL = "zai-org/GLM-5.3-Flash-BF16"
 IMG = 154854  # <|image|> == hf_config.image_token_id
 
-LAUNCH = Path(__file__).resolve().parent.parent / "launch"
+LAUNCH = Path(__file__).resolve().parents[3] / "examples/fleet/launch"
 
 # ---------------------------------------------------------------------------
 # CPU: the Dockerfile must keep carrying the patch until upstream merges it.
@@ -61,9 +61,7 @@ def _collapse_glm5_next_image_tokens(input_ids, image_token_id):
     return [
         current
         for index, current in enumerate(input_ids)
-        if current != image_token_id
-        or index == 0
-        or input_ids[index - 1] != image_token_id
+        if current != image_token_id or index == 0 or input_ids[index - 1] != image_token_id
     ]
 
 
@@ -87,7 +85,7 @@ def _expand_image_text(text, counts):
     parts = text.split("<|image|>")
     assert len(parts) - 1 == len(counts)
     out = [parts[0]]
-    for n, part in zip(counts, parts[1:]):
+    for n, part in zip(counts, parts[1:], strict=True):
         out.append("<|image|>" * n)
         out.append(part)
     return "".join(out)
@@ -118,16 +116,12 @@ def _episode(tok, noncanonical):
         "role": "tool",
         "content": [{"type": "image"}, {"type": "text", "text": "Screenshot."}],
     }
-    full = tok.apply_chat_template(
-        msgs + [obs], add_generation_prompt=True, tokenize=False
-    )
+    full = tok.apply_chat_template(msgs + [obs], add_generation_prompt=True, tokenize=False)
     # keep only the observation suffix, as recording.py does
     base = tok.apply_chat_template(msgs, add_generation_prompt=False, tokenize=False)
-    suffix = full[len(base):]
+    suffix = full[len(base) :]
     span = 250
-    tokens = tokens + tok.encode(
-        _expand_image_text(suffix, [span]), add_special_tokens=False
-    )
+    tokens = tokens + tok.encode(_expand_image_text(suffix, [span]), add_special_tokens=False)
     return tokens, [span]
 
 

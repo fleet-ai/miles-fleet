@@ -25,7 +25,7 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Protocol
 
 from examples.fleet.parser import parse_tool_call
 from examples.fleet.session import SUBMIT_TOOL, FleetSession, GradeResult
@@ -36,7 +36,7 @@ class Turn:
     """One sampled model turn. finish: "ok", "length" (per-turn token cap),
     "context_full" (no room for another turn), "aborted" (engine abort)."""
 
-    text: Optional[str]
+    text: str | None
     finish: str
 
 
@@ -51,7 +51,7 @@ class TurnRunner(Protocol):
         """True when the run is shutting the rollout down (engine abort)."""
         ...
 
-    def begin_segment(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> None:
+    def begin_segment(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> None:
         """Start a fresh conversation from a message prefix. Called once at
         episode start and again after every reset boundary."""
         ...
@@ -60,16 +60,16 @@ class TurnRunner(Protocol):
         """Sample the next assistant turn of the live conversation."""
         ...
 
-    def append_assistant(self, text: str, tool_call: Optional[Dict[str, Any]], turn: int) -> Dict[str, Any]:
+    def append_assistant(self, text: str, tool_call: dict[str, Any] | None, turn: int) -> dict[str, Any]:
         """Record the sampled turn as an assistant message; returns it."""
         ...
 
-    def append_observation(self, message: Dict[str, Any], image_urls: List[str]) -> Dict[str, Any]:
+    def append_observation(self, message: dict[str, Any], image_urls: list[str]) -> dict[str, Any]:
         """Append a tool/user observation (with optional screenshots as data
         URLs) to the live conversation; returns the message as appended."""
         ...
 
-    def note_messages(self, messages: List[Dict[str, Any]]) -> None:
+    def note_messages(self, messages: list[dict[str, Any]]) -> None:
         """Debug-trajectory hook: stash the running message log."""
         ...
 
@@ -91,21 +91,21 @@ class EpisodeStats:
     env_time: float = 0.0
     # Digest the next complete_step must present after a reset boundary;
     # lives here so the caller can still grade after an episode timeout.
-    reset_ack: Optional[str] = None
-    trajectory: Optional[List[Dict[str, Any]]] = field(default=None)
+    reset_ack: str | None = None
+    trajectory: list[dict[str, Any]] | None = field(default=None)
 
 
 @dataclass(frozen=True)
 class EpisodeResult:
-    answer: Optional[str]
+    answer: str | None
     done_reason: str
-    grade: Optional[GradeResult]  # None means aborted: nothing to train on
+    grade: GradeResult | None  # None means aborted: nothing to train on
 
 
 # ----------------------------------------------------------------- messages
 
 
-def build_messages(instructions: str, max_turns: int, step_ordinal: int, step_count: int) -> List[Dict[str, Any]]:
+def build_messages(instructions: str, max_turns: int, step_ordinal: int, step_count: int) -> list[dict[str, Any]]:
     step_note = ""
     if step_count > 1:
         step_note = (
@@ -136,12 +136,12 @@ async def _episode_loop(
     runner: TurnRunner,
     cfg: AgentConfig,
     stats: EpisodeStats,
-) -> Tuple[Optional[str], str]:
+) -> tuple[str | None, str]:
     """Run turns until a terminal condition. Returns (answer, done_reason);
     answer is non-None only for done_reason == "submitted". Grading happens
     in the caller, outside the episode wall clock."""
 
-    def record(message: Dict[str, Any]) -> None:
+    def record(message: dict[str, Any]) -> None:
         if stats.trajectory is not None:
             stats.trajectory.append(message)
             runner.note_messages(stats.trajectory)
@@ -194,7 +194,7 @@ async def _episode_loop(
             continue
 
         # ---------------------- ordinary tool turn -------------------------
-        turn_images: List[str] = []
+        turn_images: list[str] = []
         if tool_call:
             stats.tool_calls += 1
             t0 = time.time()
@@ -222,7 +222,7 @@ async def _episode_loop(
 
         body += f"\n[Turn {stats.turns}/{cfg.max_turns}]"
         if tool_call:
-            message: Dict[str, Any] = {
+            message: dict[str, Any] = {
                 "role": "tool",
                 "tool_call_id": f"call_{stats.turns:06d}",
                 "name": tool_call["name"],
@@ -241,7 +241,7 @@ async def run_agent(
     runner: TurnRunner,
     cfg: AgentConfig,
     stats: EpisodeStats,
-    prepare_gate: Optional[asyncio.Semaphore] = None,
+    prepare_gate: asyncio.Semaphore | None = None,
 ) -> EpisodeResult:
     """One full episode: open the environment, run the loop under the episode
     wall clock, grade. Every terminal reason except abort grades: without a
@@ -260,7 +260,7 @@ async def run_agent(
     if stats.trajectory is not None:
         stats.trajectory.extend(first)
 
-    answer: Optional[str] = None
+    answer: str | None = None
     done_reason = "unknown"
     try:
         answer, done_reason = await asyncio.wait_for(

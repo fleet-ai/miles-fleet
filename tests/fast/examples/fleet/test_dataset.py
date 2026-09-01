@@ -2,11 +2,10 @@
 
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any, Dict, Optional
+from typing import Any
 
-import pytest
 
-from examples.fleet.prepare_dataset import build_rows, eligible, seed_bytes, split_rows
+from examples.fleet.prepare_dataset import build_rows, seed_bytes, split_rows
 
 
 # ------------------------------------------------------------- fake taskset
@@ -14,7 +13,7 @@ from examples.fleet.prepare_dataset import build_rows, eligible, seed_bytes, spl
 
 @dataclass
 class FakeStep:
-    prompt: Optional[str] = "do it"
+    prompt: str | None = "do it"
 
 
 @dataclass
@@ -28,7 +27,7 @@ class FakeSeed:
 @dataclass
 class FakeEnv:
     image_ref: str = "registry/app:1"
-    seed: Optional[FakeSeed] = None
+    seed: FakeSeed | None = None
 
 
 @dataclass
@@ -37,7 +36,7 @@ class FakeTask:
     steps: tuple = (FakeStep(),)
     seats: tuple = ("seat1",)
     is_attempt_capable: bool = True
-    environments: Dict[str, Any] = field(default_factory=lambda: {"env": FakeEnv()})
+    environments: dict[str, Any] = field(default_factory=lambda: {"env": FakeEnv()})
     context_profile: str = "continuous"
 
 

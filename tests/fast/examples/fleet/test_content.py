@@ -4,7 +4,7 @@ import base64
 import io
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any
 
 from examples.fleet.content import tool_result_to_content, truncate_text
 
@@ -16,7 +16,7 @@ class FakeText:
 
 @dataclass
 class FakeJson:
-    value: Dict[str, Any]
+    value: dict[str, Any]
 
 
 @dataclass
@@ -35,7 +35,7 @@ class FakeBlob:
 class FakeResult:
     content: tuple
     status: str = "ok"
-    error_code: Optional[str] = None
+    error_code: str | None = None
 
 
 def _png(w, h):

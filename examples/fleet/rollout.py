@@ -29,14 +29,13 @@ import argparse
 import asyncio
 import logging
 from copy import deepcopy
-from typing import List, Optional
-
-from miles.rollout.base_types import GenerateFnInput, GenerateFnOutput
-from miles.utils.types import Sample
 
 from examples.fleet.agent import AgentConfig, EpisodeStats, run_agent
 from examples.fleet.recording import Recorder
 from examples.fleet.session import FleetSession, SessionConfig, sweep_leaked_networks
+
+from miles.rollout.base_types import GenerateFnInput, GenerateFnOutput
+from miles.utils.types import Sample
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +44,8 @@ logger = logging.getLogger(__name__)
 
 
 _SWEPT = False
-_ENV_SEMAPHORE: Optional[asyncio.Semaphore] = None
-_PREPARE_SEMAPHORE: Optional[asyncio.Semaphore] = None
+_ENV_SEMAPHORE: asyncio.Semaphore | None = None
+_PREPARE_SEMAPHORE: asyncio.Semaphore | None = None
 
 
 def _startup_once() -> None:
@@ -88,7 +87,7 @@ def _session_config(args) -> SessionConfig:
     )
 
 
-def _output(samples: List[Sample]) -> GenerateFnOutput:
+def _output(samples: list[Sample]) -> GenerateFnOutput:
     return GenerateFnOutput(samples=samples[0] if len(samples) == 1 else samples)
 
 

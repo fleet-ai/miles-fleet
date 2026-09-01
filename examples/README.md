@@ -8,6 +8,7 @@ End-to-end training workflows — the place to start.
 
 - **[geo3k_vlm](./geo3k_vlm)**: Training VLMs with FSDP using GRPO on the GEO3K dataset.
   - **[multi_turn](./geo3k_vlm/multi_turn)**: The same dataset over multiple turns, with the model cropping images through an interactive environment.
+- **[fleet](./fleet)**: Trains agents on Fleet tasks with multi-turn tool use and verifier rewards.
 - **[lora](./lora)**: LoRA fine-tuning with the Megatron backend.
 - **[multi_lora](./multi_lora)**: Fully-async multi-adapter LoRA training with a slot-keyed adapter page table.
 - **[on_policy_distillation](./on_policy_distillation)**: Teacher–student distillation on the student's own rollouts, run inside the on-policy training loop.

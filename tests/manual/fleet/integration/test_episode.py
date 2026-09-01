@@ -7,7 +7,7 @@ Drives FleetSession directly (no inference engine): correct submission ->
 1.0, wrong -> 0.0, budget-style ungraded-submission path -> 0.0. Also asserts
 nothing leaks: no fleet-labeled containers or networks survive close().
 
-Run: pytest -m docker tests/integration/
+Run: pytest -m docker tests/manual/fleet/integration/
 """
 
 import os

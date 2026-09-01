@@ -7,17 +7,15 @@ context caps, and metadata."""
 import asyncio
 import json
 from argparse import Namespace
-from typing import Any, Dict, List, Optional
-
-import pytest
-
-from miles.rollout.base_types import GenerateFnInput
-from miles.utils.types import Sample
+from typing import Any
 
 import examples.fleet.recording as recording_mod
 import examples.fleet.rollout as rollout_mod
+import pytest
 from examples.fleet.session import GradeResult, StepAdvanceInfo, ToolOutcome
 
+from miles.rollout.base_types import GenerateFnInput
+from miles.utils.types import Sample
 
 # ----------------------------------------------------------------- fixtures
 
@@ -34,15 +32,16 @@ class StubTokenizer:
             content = m.get("content") or ""
             if isinstance(content, list):
                 content = "".join(
-                    part.get("text", "<img>") if part.get("type") != "image" else "<img>"
-                    for part in content
+                    part.get("text", "<img>") if part.get("type") != "image" else "<img>" for part in content
                 )
             parts.append(f"<{m['role']}>{content}</>")
         if add_generation_prompt:
             parts.append("<gen>")
         return "".join(parts)
 
-    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False, tools=None, return_dict=False):
+    def apply_chat_template(
+        self, messages, tokenize=False, add_generation_prompt=False, tools=None, return_dict=False
+    ):
         text = self._render(messages, tools=tools, add_generation_prompt=add_generation_prompt)
         return self.encode(text) if tokenize else text
 
@@ -65,10 +64,8 @@ class FakeTito:
         )
 
     def merge_tokens(self, old_messages, new_messages, pretokenized_token_ids, tools=None):
-        appended = new_messages[len(old_messages):]
-        incremental = self.tokenizer.encode(
-            self.tokenizer._render(appended, add_generation_prompt=True)
-        )
+        appended = new_messages[len(old_messages) :]
+        incremental = self.tokenizer.encode(self.tokenizer._render(appended, add_generation_prompt=True))
         return list(pretokenized_token_ids) + incremental
 
 
@@ -81,9 +78,9 @@ class FakeFleetSession:
         *,
         step_count: int = 1,
         has_steps: bool = False,
-        advances: Optional[List[StepAdvanceInfo]] = None,
-        tool_outcomes: Optional[List[ToolOutcome]] = None,
-        grade_result: GradeResult = GradeResult(reward=1.0),
+        advances: list[StepAdvanceInfo] | None = None,
+        tool_outcomes: list[ToolOutcome] | None = None,
+        grade_result: GradeResult | None = None,
         instructions: str = "do the thing",
     ):
         self.step_count = step_count
@@ -95,11 +92,11 @@ class FakeFleetSession:
         self.tools = [{"type": "function", "function": {"name": "app__do", "parameters": {}}}]
         self._advances = list(advances or [])
         self._tool_outcomes = list(tool_outcomes or [])
-        self._grade_result = grade_result
+        self._grade_result = grade_result or GradeResult(reward=1.0)
         self.opened = False
         self.closed = False
-        self.calls: List[tuple] = []
-        self.graded_with: Optional[tuple] = None
+        self.calls: list[tuple] = []
+        self.graded_with: tuple | None = None
 
     @property
     def is_final_step(self):
@@ -190,7 +187,7 @@ SUBMIT = '<tool_call>{"name": "fleet_submit", "arguments": {"answer": "42"}}</to
 SUBMIT_EMPTY = '<tool_call>{"name": "fleet_submit", "arguments": {}}</tool_call>'
 
 
-def make_post(script: List[Any], tokenizer: StubTokenizer):
+def make_post(script: list[Any], tokenizer: StubTokenizer):
     """Each script entry is assistant text (finish stop), or a dict with
     text/finish keys, or an awaitable factory."""
 
@@ -212,7 +209,7 @@ def make_post(script: List[Any], tokenizer: StubTokenizer):
     return fake_post
 
 
-def run_generate(monkeypatch, session: FakeFleetSession, script: List[Any], args=None, aborted=False):
+def run_generate(monkeypatch, session: FakeFleetSession, script: list[Any], args=None, aborted=False):
     args = args or make_args()
     state = StubState(args)
     state.aborted = aborted
@@ -222,7 +219,9 @@ def run_generate(monkeypatch, session: FakeFleetSession, script: List[Any], args
     monkeypatch.setattr(rollout_mod, "_ENV_SEMAPHORE", None)
     monkeypatch.setattr(rollout_mod, "_PREPARE_SEMAPHORE", None)
     monkeypatch.setattr(recording_mod, "_tito_for", lambda state_, args_: FakeTito(state_.tokenizer))
-    sample = Sample(prompt=[{"role": "user", "content": "row prompt"}], metadata={"taskset_ref": "ts", "task_key": "t1"})
+    sample = Sample(
+        prompt=[{"role": "user", "content": "row prompt"}], metadata={"taskset_ref": "ts", "task_key": "t1"}
+    )
     fn_input = GenerateFnInput(state=state, sample=sample, sampling_params={"max_new_tokens": 64}, evaluation=False)
     output = asyncio.run(rollout_mod.generate(fn_input))
     return output.samples
@@ -265,7 +264,9 @@ def test_prompt_carries_tools_and_instructions(monkeypatch):
 
 def test_submit_non_string_answer_json_dumped(monkeypatch):
     session = FakeFleetSession()
-    run_generate(monkeypatch, session, ['<tool_call>{"name": "fleet_submit", "arguments": {"answer": {"k": 1}}}</tool_call>'])
+    run_generate(
+        monkeypatch, session, ['<tool_call>{"name": "fleet_submit", "arguments": {"answer": {"k": 1}}}</tool_call>']
+    )
     answer, _, _ = session.graded_with
     assert json.loads(answer) == {"k": 1}
 

@@ -22,10 +22,7 @@ def test_xml_function_grammar():
 
 
 def test_kimi_special_tokens():
-    action = (
-        "<|tool_call_begin|>functions.app__list:1<|tool_call_argument_begin|>"
-        '{"limit": 5}<|tool_call_end|>'
-    )
+    action = "<|tool_call_begin|>functions.app__list:1<|tool_call_argument_begin|>" '{"limit": 5}<|tool_call_end|>'
     call = parse_tool_call(action)
     assert call and call["name"] == "app__list"
     assert call["arguments"] == {"limit": 5}
@@ -83,7 +80,7 @@ def test_glm_arg_key_value_grammar():
 
 
 def test_glm_grammar_missing_closing_tag():
-    action = "<tool_call>app__do\n<arg_key>q</arg_key>\n<arg_value>{\"a\": 1}</arg_value>"
+    action = '<tool_call>app__do\n<arg_key>q</arg_key>\n<arg_value>{"a": 1}</arg_value>'
     call = parse_tool_call(action)
     assert call and call["name"] == "app__do"
     assert call["arguments"] == {"q": {"a": 1}}

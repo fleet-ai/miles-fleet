@@ -6,7 +6,7 @@ token assembly: what the loop asks the runner to do, in what order, with
 which messages."""
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pytest
 
@@ -19,11 +19,11 @@ from .test_rollout_loop import CALL, SUBMIT, SUBMIT_EMPTY, FakeFleetSession
 class FakeRunner:
     """Scripted turns in; a flat event log out."""
 
-    def __init__(self, turns: List[Any], aborted: bool = False):
+    def __init__(self, turns: list[Any], aborted: bool = False):
         self._turns = list(turns)
         self.aborted = aborted
-        self.events: List[tuple] = []
-        self.noted: Optional[List[Dict[str, Any]]] = None
+        self.events: list[tuple] = []
+        self.noted: list[dict[str, Any]] | None = None
 
     def begin_segment(self, messages, tools):
         self.events.append(("begin_segment", messages, tools))

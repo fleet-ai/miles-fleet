@@ -38,8 +38,9 @@ import logging
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 from examples.fleet.content import MAX_TOOL_OUTPUT_CHARS, to_plain, tool_result_to_content, truncate_text
 
@@ -82,10 +83,10 @@ except ImportError:  # SDK absent: nothing can run envs anyway
 
 @dataclass(frozen=True)
 class SessionConfig:
-    runtime_root: Optional[str] = None
+    runtime_root: str | None = None
     partial_reward: bool = False
     tool_output_max_chars: int = MAX_TOOL_OUTPUT_CHARS
-    screenshot_max_dim: Optional[int] = None
+    screenshot_max_dim: int | None = None
     vision: bool = False  # False: image blobs degrade to digest placeholders
     call_tool_timeout_s: float = CALL_TOOL_TIMEOUT_S
     grade_timeout_s: float = GRADE_TIMEOUT_S
@@ -94,8 +95,8 @@ class SessionConfig:
 @dataclass(frozen=True)
 class ToolOutcome:
     text: str
-    images: List[str] = field(default_factory=list)  # data URLs
-    error: Optional[str] = None
+    images: list[str] = field(default_factory=list)  # data URLs
+    error: str | None = None
     # A deadline expiry cannot cancel the underlying SDK call; its worker
     # thread stays alive until the operation returns. Continuing the episode
     # would stack one abandoned thread per hung call, so a timeout is
@@ -116,9 +117,9 @@ class StepAdvanceInfo:
 
     continues: bool
     reset: bool
-    next_prompt: Optional[str]
+    next_prompt: str | None
     # Digest the NEXT complete_step must present when reset is True.
-    reset_ack: Optional[str]
+    reset_ack: str | None
 
 
 def _prepare_with_retry(runtime, task, source, task_key: str):
@@ -131,7 +132,7 @@ def _prepare_with_retry(runtime, task, source, task_key: str):
     attempt carry the fleet.runtime label and are reclaimed by
     sweep_leaked_networks().
     """
-    last_err: Optional[Exception] = None
+    last_err: Exception | None = None
     for attempt in range(1, PREPARE_ATTEMPTS + 1):
         try:
             return runtime.prepare(task, source=source)
@@ -146,11 +147,11 @@ def _prepare_with_retry(runtime, task, source, task_key: str):
 
 # resolve_source compiles YAML / loads the local store; once per
 # (source, root) per process, not once per rollout.
-_TASKSET_CACHE: Dict[Tuple[str, Optional[str]], Any] = {}
+_TASKSET_CACHE: dict[tuple[str, str | None], Any] = {}
 _TASKSET_CACHE_LOCK = threading.Lock()
 
 
-def _resolve_taskset(source: str, root: Optional[str]):
+def _resolve_taskset(source: str, root: str | None):
     key = (source, root)
     with _TASKSET_CACHE_LOCK:
         cached = _TASKSET_CACHE.get(key)
@@ -164,7 +165,7 @@ def _resolve_taskset(source: str, root: Optional[str]):
     return _TASKSET_CACHE[key]
 
 
-def _image_locators_for(root_digest: str, runtime_root: Optional[str]) -> Dict[str, str]:
+def _image_locators_for(root_digest: str, runtime_root: str | None) -> dict[str, str]:
     """Read the flt client's image-location plan for this taskset root.
 
     (<runtime-root>/image-locations/sha256/<root-digest>.json). Maps config
@@ -199,7 +200,9 @@ def sweep_prepare_leftovers() -> None:
         for state in ("created", "exited"):
             out = subprocess.run(
                 ["docker", "ps", "-aq", "--filter", "label=fleet.runtime=1", "--filter", f"status={state}"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             for cid in out.stdout.split():
                 subprocess.run(["docker", "rm", "-f", cid], capture_output=True, timeout=30)
@@ -244,9 +247,9 @@ def _with_deadline(fn: Callable[[], Any], timeout_s: float, label: str):
         pool.shutdown(wait=False, cancel_futures=True)
 
 
-def _within_budget(tools: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
+def _within_budget(tools: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
     """Cap the schema list by dropping whole schemas past TOOLS_JSON_MAX_CHARS."""
-    kept: List[Dict[str, Any]] = []
+    kept: list[dict[str, Any]] = []
     used = 0
     dropped = 0
     for tool in tools:
@@ -284,9 +287,9 @@ class FleetSession:
         self.task_key = task_key
         self.config = config or SessionConfig()
 
-        self.tools: List[Dict[str, Any]] = []
+        self.tools: list[dict[str, Any]] = []
         self.instructions: str = ""
-        self.attempt_id: Optional[str] = None
+        self.attempt_id: str | None = None
         self.tools_dropped = 0
 
         self._task = None
@@ -307,7 +310,7 @@ class FleetSession:
         self._task = compiled.task
 
         locators = _image_locators_for(getattr(taskset, "root_digest", ""), self.config.runtime_root)
-        kwargs: Dict[str, Any] = {"image_locators": locators} if locators else {}
+        kwargs: dict[str, Any] = {"image_locators": locators} if locators else {}
         if self.config.runtime_root:
             kwargs["root"] = self.config.runtime_root
         self._runtime = LocalRuntime(**kwargs)
@@ -347,7 +350,7 @@ class FleetSession:
 
     # ------------------------------------------------------------------ tools
 
-    def call_tool(self, name: str, arguments: Dict[str, Any]) -> ToolOutcome:
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolOutcome:
         try:
             result = _with_deadline(
                 lambda: self._channel.call_tool(name, arguments),
@@ -367,8 +370,10 @@ class FleetSession:
         )
         text = truncate_text(raw, self.config.tool_output_max_chars)
         if str(getattr(result, "status", "")).endswith("error") or getattr(result, "error_code", None):
-            error = f"{getattr(result, 'error_code', 'tool_error')}: {text}" if text else str(
-                getattr(result, "error_code", "tool_error")
+            error = (
+                f"{getattr(result, 'error_code', 'tool_error')}: {text}"
+                if text
+                else str(getattr(result, "error_code", "tool_error"))
             )
             # Error results drop their images: the model should read the error.
             return ToolOutcome(text="", error=error)
@@ -400,7 +405,7 @@ class FleetSession:
         """Live: re-reads the current step after every advance."""
         return self._channel.instructions or ""
 
-    def close_step(self, reset_ack: Optional[str]) -> StepAdvanceInfo:
+    def close_step(self, reset_ack: str | None) -> StepAdvanceInfo:
         """Close the open step. Boundary transitions run inside the live env,
         so this is deadline-bounded like a tool call."""
         advance = _with_deadline(
@@ -420,7 +425,7 @@ class FleetSession:
 
     # ------------------------------------------------------------------ grade
 
-    def grade(self, answer: Optional[str], reset_ack: Optional[str] = None, close_final_step: bool = False) -> GradeResult:
+    def grade(self, answer: str | None, reset_ack: str | None = None, close_final_step: bool = False) -> GradeResult:
         """Run grading exactly once; map the report to the float contract.
 
         For step-protocol tasks reached via submission, the final step is
