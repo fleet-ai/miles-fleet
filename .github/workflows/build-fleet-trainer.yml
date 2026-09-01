@@ -30,7 +30,7 @@ jobs:
   build:
     name: Validate or publish Fleet trainer image
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["docker-build"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["warp-ubuntu-latest-x64-32x"]') }}
     timeout-minutes: 120
     permissions:
       contents: read
@@ -38,6 +38,15 @@ jobs:
     steps:
       - name: Checkout Miles
         uses: actions/checkout@v7
+
+      - name: Free up disk space
+        if: github.event_name != 'pull_request'
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/powershell || true
+          df -h /
 
       - name: Start the platform deploy-key agent
         if: github.event_name != 'pull_request'
