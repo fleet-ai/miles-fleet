@@ -108,7 +108,7 @@ def execute(args):
         f"--global-batch-size {args.rollout_batch_size * args.n_samples_per_prompt} --rollout-seed 1234 --seed 1234 "
         "--rollout-temperature 0.6 --rollout-top-p 0.95 --rollout-top-k 20 "
         "--tensor-model-parallel-size 1 --pipeline-model-parallel-size 1 --context-parallel-size 1 "
-        "--use-dynamic-batch-size --max-tokens-per-gpu 12000 --use-dynamic-global-batch-size "
+        f"--use-dynamic-batch-size --max-tokens-per-gpu {args.max_prompt_len + args.max_response_len + 512} --use-dynamic-global-batch-size "
         "--advantage-estimator grpo --calculate-per-token-loss --disable-grpo-std-normalization "
         "--use-kl-loss --kl-loss-coef 0.001 --kl-loss-type low_var_kl "
         f"--optimizer adam --lr {args.lr} --lr-decay-style constant --weight-decay 0.1 --adam-beta1 0.9 --adam-beta2 0.98 "
