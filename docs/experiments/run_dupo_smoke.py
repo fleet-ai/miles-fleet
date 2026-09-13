@@ -20,16 +20,26 @@ REVISION = "2fc06364715b967f1860aea9cf38778875588b17"
 AIME_REVISION = "1c625e328db94ec7ef7ff169016b097c468d60b9"
 
 
+REWARDS = {
+    "deepscaler": "--rm-type deepscaler",
+    "math-answer": "--custom-rm-path miles.rollout.rm_hub.math_answer.miles_batched_reward",
+}
+
+
 @dataclass
 class ScriptArgs(U.ExecuteTrainConfig):
     algorithm: str = "dupo"
     model_dir: str = "/sfs/neeraj/dupo-v001/smoke-models"
     megatron_path: str = "/root/Megatron-LM"
+    reward: str = "deepscaler"
+    max_response_len: int = 256
 
 
 def execute(args):
     if args.algorithm not in ("dupo", "grpo"):
         raise ValueError("algorithm must be dupo or grpo")
+    if args.reward not in REWARDS:
+        raise ValueError(f"reward must be one of {sorted(REWARDS)}")
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=False)
     (output / "source-hashes.json").write_bytes((U.repo_base_dir / "source-hashes.json").read_bytes())
@@ -40,7 +50,7 @@ def execute(args):
     aime = json.loads(raw.splitlines()[0])
     records = [
         {
-            "prompt": [{"role": "user", "content": "What is 1 + 1? Put your final answer in \\boxed{}."}],
+            "prompt": [{"role": "user", "content": "What is 1 + 1?" + (" Put your final answer in \\boxed{}." if args.reward == "deepscaler" else "")}],
             "label": "2",
             "metadata": {"task_id": "arithmetic-addition-1", "task_type": "arithmetic"},
         },
@@ -56,8 +66,8 @@ def execute(args):
         f"--prompt-data {q(str(data))} --input-key prompt --label-key label --metadata-key metadata "
         "--apply-chat-template --apply-chat-template-kwargs '{\"enable_thinking\": true}' "
         "--rollout-function-path miles.rollout.sglang_rollout.generate_rollout "
-        "--rm-type deepscaler --num-rollout 2 --rollout-batch-size 2 --over-sampling-batch-size 2 "
-        "--n-samples-per-prompt 4 --rollout-max-response-len 256 --rollout-temperature 0.6 "
+        f"{REWARDS[args.reward]} --num-rollout 2 --rollout-batch-size 2 --over-sampling-batch-size 2 "
+        f"--n-samples-per-prompt 4 --rollout-max-response-len {args.max_response_len} --rollout-temperature 0.6 "
         "--rollout-top-p 0.95 --rollout-top-k 20 --global-batch-size 8 "
         "--tensor-model-parallel-size 1 --pipeline-model-parallel-size 1 --context-parallel-size 1 "
         "--use-dynamic-batch-size --max-tokens-per-gpu 4096 --use-dynamic-global-batch-size "
