@@ -22,7 +22,7 @@ AIME_REVISION = "1c625e328db94ec7ef7ff169016b097c468d60b9"
 
 REWARDS = {
     "deepscaler": "--rm-type deepscaler",
-    "math-answer": "--custom-rm-path miles.rollout.rm_hub.math_answer.miles_batched_reward",
+    "math-answer": "--custom-rm-path miles.rollout.rm_hub.math_answer.miles_reward",
 }
 
 

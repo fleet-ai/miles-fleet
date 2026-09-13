@@ -355,10 +355,11 @@ def score(
     )
 
 
-# --- Miles reward-model adapters ------------------------------------------
-# ``--custom-rm-path <module>.math_scorer.miles_batched_reward`` makes Miles
-# call the batched entry point with the whole rollout batch; the per-sample
-# entry point serves the multi-LoRA path, which calls ``async_rm`` per sample.
+# --- Miles reward-model adapter ------------------------------------------
+# ``--custom-rm-path <module>.math_answer.miles_reward``. Miles calls the
+# custom function per sample from ``async_rm(args, sample)`` in the sglang
+# rollout and with the whole batch from ``batched_async_rm(args, samples)``
+# elsewhere, so the one entry point accepts either.
 
 
 def _sample_flags(sample) -> tuple[bool, bool]:
@@ -368,7 +369,7 @@ def _sample_flags(sample) -> tuple[bool, bool]:
     return truncated, bool(md.get("thinking_opened_in_prompt", True))
 
 
-async def miles_reward(args, sample, **kwargs) -> float:
+def _score_sample(sample) -> float:
     truncated, thinking = _sample_flags(sample)
     result = score(sample.response, sample.label, truncated=truncated, thinking_opened_in_prompt=thinking)
     md = getattr(sample, "metadata", None)
@@ -378,5 +379,10 @@ async def miles_reward(args, sample, **kwargs) -> float:
     return float(result.score)
 
 
-async def miles_batched_reward(args, samples, **kwargs) -> list[float]:
-    return [await miles_reward(args, s, **kwargs) for s in samples]
+async def miles_reward(args, sample_or_samples, **kwargs):
+    if isinstance(sample_or_samples, (list, tuple)):
+        return [_score_sample(s) for s in sample_or_samples]
+    return _score_sample(sample_or_samples)
+
+
+miles_batched_reward = miles_reward

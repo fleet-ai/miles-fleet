@@ -23,7 +23,7 @@ from miles.rollout.compute_accounting import VERSION, Qwen35Flops
 
 REWARDS = {
     "deepscaler": "--rm-type deepscaler",
-    "math-answer": "--custom-rm-path miles.rollout.rm_hub.math_answer.miles_batched_reward",
+    "math-answer": "--custom-rm-path miles.rollout.rm_hub.math_answer.miles_reward",
 }
 
 REVISIONS = {
