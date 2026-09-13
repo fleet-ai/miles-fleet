@@ -61,6 +61,10 @@ class ScriptArgs(U.ExecuteTrainConfig):
     # Optimizer learning rate (constant) and samples per prompt (the GRPO group).
     lr: float = 2e-6
     n_samples_per_prompt: int = 4
+    # GPUs for the run: colocated, one sglang engine per GPU and Megatron data
+    # parallel across them. Scale rollout_batch_size with it; the FLOP budget
+    # is per run, not per GPU.
+    gpus: int = 1
 
 
 def execute(args):
@@ -114,8 +118,8 @@ def execute(args):
         f"--optimizer adam --lr {args.lr} --lr-decay-style constant --weight-decay 0.1 --adam-beta1 0.9 --adam-beta2 0.98 "
         "--attention-dropout 0.0 --hidden-dropout 0.0 --clip-grad 1.0 --bf16 --use-distributed-optimizer "
         "--rollout-num-gpus-per-engine 1 --sglang-mem-fraction-static 0.15 --sglang-disable-cuda-graph "
-        f"--sglang-max-running-requests {args.rollout_batch_size * args.n_samples_per_prompt} "
-        "--colocate --actor-num-nodes 1 --actor-num-gpus-per-node 1 --num-gpus-per-node 1 "
+        f"--sglang-max-running-requests {max(1, (args.rollout_batch_size * args.n_samples_per_prompt + args.gpus - 1) // args.gpus)} "
+        f"--colocate --actor-num-nodes 1 --actor-num-gpus-per-node {args.gpus} --num-gpus-per-node {args.gpus} "
         f"--save-debug-rollout-data {q(str(output / 'rollouts' / '{rollout_id}.pt'))} "
         f"--use-wandb --wandb-project dynamic-ungrouped-po --wandb-group {q(args.wandb_group or output.name)} "
         "--disable-wandb-random-suffix "
@@ -129,6 +133,7 @@ def execute(args):
     if args.algorithm == "dupo":
         train_args += "--dupo --dupo-group-size 4 --dupo-epsilon 0.05 --dupo-threshold 1 --dupo-retention symmetric "
     settings = dict(
+        gpus=args.gpus,
         lr=args.lr,
         n_samples_per_prompt=args.n_samples_per_prompt,
         rollout_batch_size=args.rollout_batch_size,
@@ -152,7 +157,7 @@ def execute(args):
     (record / "source-hashes.json").write_bytes((U.repo_base_dir / "source-hashes.json").read_bytes())
     U.execute_train(
         train_args,
-        num_gpus_per_node=1,
+        num_gpus_per_node=args.gpus,
         megatron_model_type=f"qwen3.5-{args.model_size}",
         config=args,
         megatron_path=args.megatron_path,
