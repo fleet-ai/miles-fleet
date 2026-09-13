@@ -1,0 +1,173 @@
+{
+  "observed_at": "2026-09-13T14:49:59.304939+00:00",
+  "runs": [
+    {
+      "job": "neeraj-grpo-0p8b-train-01539b81",
+      "model": "0p8b",
+      "algorithm": "grpo",
+      "completed_optimizer_steps": 0,
+      "last_rollout": null,
+      "total_provisional_steps": 334,
+      "wandb_run": "4bbznwon",
+      "kubernetes_status": {
+        "active": 1,
+        "conditions": [
+          {
+            "lastProbeTime": "2026-09-13T14:47:47Z",
+            "lastTransitionTime": "2026-09-13T14:47:47Z",
+            "message": "Job resumed",
+            "reason": "JobResumed",
+            "status": "False",
+            "type": "Suspended"
+          }
+        ],
+        "ready": 1,
+        "startTime": "2026-09-13T14:47:47Z",
+        "terminating": 0,
+        "uncountedTerminatedPods": {}
+      },
+      "suspended": false,
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-grpo-0p8b-train-01539b81"
+    },
+    {
+      "job": "neeraj-dupo-0p8b-train-01539b81",
+      "model": "0p8b",
+      "algorithm": "dupo",
+      "completed_optimizer_steps": 0,
+      "last_rollout": null,
+      "total_provisional_steps": 334,
+      "wandb_run": "oasf552e",
+      "kubernetes_status": {
+        "active": 1,
+        "conditions": [
+          {
+            "lastProbeTime": "2026-09-13T14:47:47Z",
+            "lastTransitionTime": "2026-09-13T14:47:47Z",
+            "message": "Job resumed",
+            "reason": "JobResumed",
+            "status": "False",
+            "type": "Suspended"
+          }
+        ],
+        "ready": 1,
+        "startTime": "2026-09-13T14:47:47Z",
+        "terminating": 0,
+        "uncountedTerminatedPods": {}
+      },
+      "suspended": false,
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-dupo-0p8b-train-01539b81"
+    },
+    {
+      "job": "neeraj-grpo-2b-train-01539b81",
+      "model": "2b",
+      "algorithm": "grpo",
+      "completed_optimizer_steps": 3,
+      "last_rollout": 2,
+      "total_provisional_steps": 141,
+      "wandb_run": "dmmnzqdb",
+      "kubernetes_status": {
+        "active": 1,
+        "conditions": [
+          {
+            "lastProbeTime": "2026-09-13T14:25:42Z",
+            "lastTransitionTime": "2026-09-13T14:25:42Z",
+            "message": "Job resumed",
+            "reason": "JobResumed",
+            "status": "False",
+            "type": "Suspended"
+          }
+        ],
+        "ready": 1,
+        "startTime": "2026-09-13T14:25:42Z",
+        "terminating": 0,
+        "uncountedTerminatedPods": {}
+      },
+      "suspended": false,
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-grpo-2b-train-01539b81"
+    },
+    {
+      "job": "neeraj-dupo-2b-train-01539b81",
+      "model": "2b",
+      "algorithm": "dupo",
+      "completed_optimizer_steps": 3,
+      "last_rollout": 2,
+      "total_provisional_steps": 141,
+      "wandb_run": "70jxu61m",
+      "kubernetes_status": {
+        "active": 1,
+        "conditions": [
+          {
+            "lastProbeTime": "2026-09-13T14:25:39Z",
+            "lastTransitionTime": "2026-09-13T14:25:39Z",
+            "message": "Job resumed",
+            "reason": "JobResumed",
+            "status": "False",
+            "type": "Suspended"
+          }
+        ],
+        "ready": 1,
+        "startTime": "2026-09-13T14:25:39Z",
+        "terminating": 0,
+        "uncountedTerminatedPods": {}
+      },
+      "suspended": false,
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-dupo-2b-train-01539b81"
+    },
+    {
+      "job": "neeraj-grpo-4b-train-01539b81",
+      "model": "4b",
+      "algorithm": "grpo",
+      "completed_optimizer_steps": 2,
+      "last_rollout": 1,
+      "total_provisional_steps": 63,
+      "wandb_run": "ddwyj2r2",
+      "kubernetes_status": {
+        "active": 1,
+        "conditions": [
+          {
+            "lastProbeTime": "2026-09-13T14:25:43Z",
+            "lastTransitionTime": "2026-09-13T14:25:43Z",
+            "message": "Job resumed",
+            "reason": "JobResumed",
+            "status": "False",
+            "type": "Suspended"
+          }
+        ],
+        "ready": 1,
+        "startTime": "2026-09-13T14:25:43Z",
+        "terminating": 0,
+        "uncountedTerminatedPods": {}
+      },
+      "suspended": false,
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-grpo-4b-train-01539b81"
+    },
+    {
+      "job": "neeraj-dupo-4b-train-01539b81",
+      "model": "4b",
+      "algorithm": "dupo",
+      "completed_optimizer_steps": 2,
+      "last_rollout": 1,
+      "total_provisional_steps": 63,
+      "wandb_run": "xrybmkt3",
+      "kubernetes_status": {
+        "active": 1,
+        "conditions": [
+          {
+            "lastProbeTime": "2026-09-13T14:25:40Z",
+            "lastTransitionTime": "2026-09-13T14:25:40Z",
+            "message": "Job resumed",
+            "reason": "JobResumed",
+            "status": "False",
+            "type": "Suspended"
+          }
+        ],
+        "ready": 1,
+        "startTime": "2026-09-13T14:25:40Z",
+        "terminating": 0,
+        "uncountedTerminatedPods": {}
+      },
+      "suspended": false,
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-dupo-4b-train-01539b81"
+    }
+  ]
+}

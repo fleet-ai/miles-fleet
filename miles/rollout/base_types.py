@@ -54,6 +54,8 @@ class RolloutFnEvalInput(RolloutFnBaseInput):
 class RolloutFnTrainOutput:
     samples: list[list[Sample]]
     metrics: dict[str, Any] = None
+    dupo_observations: list[list[Sample]] | None = None
+    dupo_launched_count: int | None = None
 
 
 # TODO make it frozen

@@ -1,6 +1,8 @@
 import itertools
 import logging
 
+from miles.rollout.dupo import flatten_rollouts
+from miles.utils.dp_schedule import has_full_schedule_config
 from miles.utils.multi_lora import is_multi_lora_enabled
 from miles.utils.types import Sample
 
@@ -9,6 +11,8 @@ logger = logging.getLogger(__name__)
 
 def postprocess_rollout_data(args, data, train_parallel_config):
     metadata = {}
+    if getattr(args, "dupo", False):
+        return postprocess_dupo_data(data, train_parallel_config)
 
     validate_compact_rollout_ids(data)
 
@@ -121,3 +125,17 @@ def _compute_dynamic_global_batch_size(args, train_parallel_config, num_samples:
         )
 
     return dynamic_gbs
+
+
+def postprocess_dupo_data(groups, train_parallel_config):
+    """Keep group boundaries until centering and train every survivor in one step."""
+    samples = flatten_rollouts(groups)
+    if not samples:
+        return [], {"prompt_group_sizes": [], "dynamic_global_batch_size": 0}
+    if not has_full_schedule_config(train_parallel_config):
+        raise ValueError("DUPO requires the Megatron rollout-side microbatch scheduler")
+    if (train_parallel_config["vpp_size"] or 1) != 1:
+        raise ValueError("DUPO does not support virtual pipeline parallelism")
+    if len(samples) < train_parallel_config["dp_size"]:
+        raise ValueError("DUPO survivors cannot fill all data-parallel ranks; use dp_size=1")
+    return samples, {"prompt_group_sizes": [len(group) for group in groups], "dynamic_global_batch_size": len(samples)}

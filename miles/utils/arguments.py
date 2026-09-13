@@ -11,6 +11,8 @@ from miles.backends.sglang_utils.arguments import add_sglang_arguments, collect_
 from miles.backends.sglang_utils.arguments import validate_args as sglang_validate_args
 from miles.dashboard.args import add_dashboard_arguments, validate_dashboard_args
 from miles.rollout.checkpoint_eval import is_checkpoint_eval_fn
+from miles.rollout.compute_accounting import validate_compute_args
+from miles.rollout.dupo import validate_dupo_args
 from miles.utils.chat_template_utils.tito_tokenizer import TITOTokenizerType
 from miles.utils.environ import enable_experimental_ft_trainer, use_legacy_rollout_v1
 from miles.utils.eval_config import EvalDatasetConfig, build_eval_dataset_configs, ensure_dataset_list
@@ -1450,6 +1452,16 @@ def get_miles_extra_args_provider(add_custom_arguments=None):
                 help="Choose KL loss type: kl, k2, k3, low_var_kl",
             )
             parser.add_argument(
+                "--dupo", action="store_true", help="Enable type-level Bayesian rejection and shuffled reward groups."
+            )
+            parser.add_argument("--compute-budget-flops", type=float, default=None)
+            parser.add_argument("--compute-checkpoint-count", type=int, default=4)
+            parser.add_argument("--compute-overshoot-tolerance", type=float, default=0.01)
+            parser.add_argument("--dupo-group-size", type=int, default=4)
+            parser.add_argument("--dupo-epsilon", type=float, default=0.05)
+            parser.add_argument("--dupo-threshold", type=float, default=1.0)
+            parser.add_argument("--dupo-retention", choices=["symmetric", "easy"], default="symmetric")
+            parser.add_argument(
                 "--advantage-estimator",
                 type=str,
                 choices=[
@@ -2766,6 +2778,8 @@ def parse_args(add_custom_arguments=None):
         validate_hybrid_shard_args(args)
 
     sglang_validate_args(args)
+    validate_dupo_args(args)
+    validate_compute_args(args)
 
     return args
 

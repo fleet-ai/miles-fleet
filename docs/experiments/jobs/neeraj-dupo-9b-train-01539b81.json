@@ -1,0 +1,113 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "name": "neeraj-dupo-9b-train-01539b81",
+    "namespace": "fleet-train-jobs",
+    "labels": {
+      "kueue.x-k8s.io/queue-name": "training-lq",
+      "kueue.x-k8s.io/priority-class": "q1"
+    }
+  },
+  "spec": {
+    "suspend": true,
+    "backoffLimit": 0,
+    "activeDeadlineSeconds": 86400,
+    "ttlSecondsAfterFinished": 86400,
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "neeraj-dupo-9b-train-01539b81"
+        }
+      },
+      "spec": {
+        "restartPolicy": "Never",
+        "priorityClassName": "c1",
+        "tolerations": [
+          {
+            "key": "workload",
+            "operator": "Equal",
+            "value": "fleetai-training-ng-gpu",
+            "effect": "NoSchedule"
+          }
+        ],
+        "containers": [
+          {
+            "name": "train",
+            "image": "radixark/miles@sha256:a7ef79b5c0d0cb1a5d6ab0f39a2693ea63ea369d9339d04b7b3e0b7ec23b5dfe",
+            "command": [
+              "bash",
+              "-c",
+              "set -euo pipefail\nTASK_SOURCE=$(mktemp -d)\ntar -xzf /source/source.tar.gz -C \"$TASK_SOURCE\"\ncd \"$TASK_SOURCE\"\nexport PYTHONPATH=\"$TASK_SOURCE:/root/Megatron-LM:${PYTHONPATH:-}\"\npython docs/experiments/run_dupo_training.py --algorithm dupo --model-size 9B --model-dir /sfs/neeraj/dupo-v001/baselines/models/9b/c202236235762e1c871ad0ccb60c8ee5ba337b9a --data-dir /sfs/neeraj/dupo-v001/training/data-v1 --compute-budget-flops 2e17 --estimated-rollout-steps 34 --max-response-len 8192 --output-dir /sfs/neeraj/dupo-v001/training/neeraj-dupo-9b-train-01539b81\n"
+            ],
+            "resources": {
+              "requests": {
+                "cpu": "8",
+                "memory": "384Gi",
+                "ephemeral-storage": "48Gi",
+                "nvidia.com/gpu": "1"
+              },
+              "limits": {
+                "cpu": "8",
+                "memory": "384Gi",
+                "ephemeral-storage": "48Gi",
+                "nvidia.com/gpu": "1"
+              }
+            },
+            "env": [
+              {
+                "name": "WANDB_API_KEY",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "wandb-api",
+                    "key": "WANDB_API_KEY"
+                  }
+                }
+              },
+              {
+                "name": "PYTHONUNBUFFERED",
+                "value": "1"
+              }
+            ],
+            "volumeMounts": [
+              {
+                "name": "source",
+                "mountPath": "/source",
+                "readOnly": true
+              },
+              {
+                "name": "sfs",
+                "mountPath": "/sfs"
+              },
+              {
+                "name": "dshm",
+                "mountPath": "/dev/shm"
+              }
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "name": "source",
+            "configMap": {
+              "name": "neeraj-dupo-training-01539b81-source"
+            }
+          },
+          {
+            "name": "sfs",
+            "persistentVolumeClaim": {
+              "claimName": "sfs-shared"
+            }
+          },
+          {
+            "name": "dshm",
+            "emptyDir": {
+              "medium": "Memory",
+              "sizeLimit": "8Gi"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

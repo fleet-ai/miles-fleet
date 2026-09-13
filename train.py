@@ -4,6 +4,7 @@ import os
 
 from sglang.srt.constants import GPU_MEMORY_TYPE_CUDA_GRAPH, GPU_MEMORY_TYPE_KV_CACHE, GPU_MEMORY_TYPE_WEIGHTS
 
+from miles.backends.training_utils.dupo import train_actor_or_skip
 from miles.ray.placement_group import create_placement_groups, create_rollout_manager, create_training_models
 from miles.utils import object_store
 from miles.utils.arguments import parse_args
@@ -105,7 +106,13 @@ async def train(args):
         if args.eval_interval is not None and rollout_id == args.start_rollout_id and not args.skip_eval_before_train:
             await rollout_manager.eval.remote(rollout_id)
 
+        if getattr(args, "compute_budget_flops", None):
+            schedule = await rollout_manager.get_compute_schedule.remote()
+            if schedule["consumed_fraction"] >= 1:
+                break
         rollout_data_pack = await rollout_manager.generate.remote(rollout_id)
+
+        skip_training = rollout_data_pack.get("skip_training", False)
 
         if args.offload_rollout:
             if args.colocate_memory_peak_device == "gpu":
@@ -120,6 +127,9 @@ async def train(args):
                     offload_tags.append(GPU_MEMORY_TYPE_WEIGHTS)
                 await rollout_manager.offload.remote(tags=offload_tags)
 
+        if skip_training and args.offload_train and args.colocate_memory_peak_device != "gpu":
+            await actor_model.onload()
+
         if args.use_critic:
             values = await critic_model.train(rollout_id, rollout_data_pack)
             if args.offload_train:
@@ -129,16 +139,31 @@ async def train(args):
                 if args.offload_train:
                     await actor_model.offload()
         else:
-            await actor_model.train(rollout_id, rollout_data_pack)
-        remove_rollout_data_refs(args, rollout_data_pack)
+            await train_actor_or_skip(actor_model, rollout_id, rollout_data_pack)
+        if not skip_training:
+            remove_rollout_data_refs(args, rollout_data_pack)
+
+        compute_result = await rollout_manager.complete_training.remote(rollout_id)
+        compute_stop = compute_result.get("budget_exhausted", False)
+        compute_save = compute_result.get("checkpoint_due", False)
 
         external_save = args.save_trigger_sentinel is not None and os.path.exists(args.save_trigger_sentinel)
-        if external_save or should_run_periodic_action(
-            rollout_id, args.save_interval, num_rollout_per_epoch, args.num_rollout
+        if (
+            compute_save
+            or compute_stop
+            or external_save
+            or should_run_periodic_action(rollout_id, args.save_interval, num_rollout_per_epoch, args.num_rollout)
         ):
-            await save(rollout_id, force_sync=external_save)
+            await save(rollout_id, force_sync=external_save or compute_stop)
             if external_save:
                 os.remove(args.save_trigger_sentinel)
+
+        if compute_stop:
+            if compute_result["overshoot_fraction"] > args.compute_overshoot_tolerance:
+                raise RuntimeError(
+                    "Completed compute budget exceeds the declared overshoot tolerance; see saved compute report"
+                )
+            break
 
         if args.colocate_memory_peak_device == "gpu":
             await actor_model.clear_memory()

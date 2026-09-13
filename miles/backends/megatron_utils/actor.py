@@ -207,6 +207,13 @@ class MegatronTrainRayActor(TrainRayActor):
                     model_chunk, parallel_state.cp.group, parallel_state.cp.rank, parallel_state.cp.size
                 )
 
+        if getattr(args, "compute_budget_flops", None):
+            self.train_parallel_config["trainable_parameters"] = sum(
+                parameter.numel()
+                for chunk in self.model
+                for parameter in chunk.parameters()
+                if parameter.requires_grad
+            )
         verify_megatron_parallel_state(self.model)
 
         start_rollout_id = loaded_rollout_id + 1
@@ -494,6 +501,17 @@ class MegatronTrainRayActor(TrainRayActor):
         # Create data iterator for log_probs and train.
         data_iterator, num_microbatches = get_data_iterator(self.args, self.model, rollout_data)
         num_optimizer_steps = len(num_microbatches)
+        if getattr(self.args, "compute_budget_flops", None):
+            if num_optimizer_steps != 1:
+                raise ValueError("Compute accounting requires exactly one optimizer pass per rollout")
+            fraction = ray.get(self.rollout_manager.get_compute_schedule.remote())["consumed_fraction"]
+            learning_rate = self.args.lr * (1.0 - fraction)
+            self.opt_param_scheduler.max_lr = learning_rate
+            self.opt_param_scheduler.min_lr = learning_rate
+            for group in self.optimizer.param_groups:
+                group["max_lr"] = learning_rate
+                group["min_lr"] = learning_rate
+            self.opt_param_scheduler.step(increment=0)
         skip_actor_forward_only = self.args.skip_actor_forward_only
         if skip_actor_forward_only:
             option = "--skip-actor-forward-only"

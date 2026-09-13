@@ -1,0 +1,38 @@
+[
+  {
+    "enabled_at": "2026-09-13T14:53:52.901942+00:00",
+    "engine_url": "http://10.78.222.148:15000",
+    "configuration": {
+      "dump_requests_folder": "/sfs/neeraj/dupo-v001/training/neeraj-grpo-0p8b-train-01539b81/sglang-requests",
+      "dump_requests_threshold": 12,
+      "dump_requests_exclude_meta_keys": [
+        "routed_experts",
+        "hidden_states",
+        "input_token_logprobs",
+        "output_token_logprobs",
+        "input_top_logprobs",
+        "output_top_logprobs"
+      ]
+    },
+    "model_path": "/sfs/neeraj/dupo-v001/baselines/models/0p8b/2fc06364715b967f1860aea9cf38778875588b17",
+    "limitation": "Earlier requests and a final incomplete 12-request dump may be absent; preserve coverage bounds."
+  },
+  {
+    "enabled_at": "2026-09-13T14:53:55.186981+00:00",
+    "engine_url": "http://10.78.190.150:15000",
+    "configuration": {
+      "dump_requests_folder": "/sfs/neeraj/dupo-v001/training/neeraj-dupo-0p8b-train-01539b81/sglang-requests",
+      "dump_requests_threshold": 12,
+      "dump_requests_exclude_meta_keys": [
+        "routed_experts",
+        "hidden_states",
+        "input_token_logprobs",
+        "output_token_logprobs",
+        "input_top_logprobs",
+        "output_top_logprobs"
+      ]
+    },
+    "model_path": "/sfs/neeraj/dupo-v001/baselines/models/0p8b/2fc06364715b967f1860aea9cf38778875588b17",
+    "limitation": "Earlier requests and a final incomplete 12-request dump may be absent; preserve coverage bounds."
+  }
+]

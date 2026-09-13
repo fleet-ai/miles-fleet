@@ -389,7 +389,7 @@ async def generate_and_rm_group(
     return group
 
 
-async def abort(args: Namespace, rollout_id: int) -> list[list[Sample]]:
+async def abort(args: Namespace, rollout_id: int, observations=None) -> list[list[Sample]]:
     aborted_samples = []
 
     state = GenerateState(args)
@@ -419,6 +419,9 @@ async def abort(args: Namespace, rollout_id: int) -> list[list[Sample]]:
     count = 0
     while state.pendings:
         done, state.pendings = await asyncio.wait(state.pendings, return_when=asyncio.FIRST_COMPLETED)
+
+        if observations is not None:
+            observations.extend(task.result() for task in done)
 
         if not args.partial_rollout:
             continue
@@ -471,6 +474,7 @@ async def generate_rollout_async(
 
     data = []
     all_data = []
+    launched_count = 0
     do_print = True
     pbar = tqdm(total=target_data_size * args.n_samples_per_prompt, desc="Rollout generation")
     while len(data) < target_data_size:
@@ -478,6 +482,7 @@ async def generate_rollout_async(
             # get samples from the buffer and submit the generation requests.
             samples = data_source(args.over_sampling_batch_size)
             state.submit_generate_tasks(samples)
+            launched_count += sum(len(group) for group in samples)
 
         # wait for the generation to finish
         done, state.pendings = await asyncio.wait(state.pendings, return_when=asyncio.FIRST_COMPLETED)
@@ -518,7 +523,13 @@ async def generate_rollout_async(
     )
 
     # there are still some unfinished requests, abort them
-    aborted_samples = await abort(args, rollout_id)
+    aborted_samples = await abort(
+        args,
+        rollout_id,
+        observations=(
+            all_data if (getattr(args, "dupo", False) or getattr(args, "compute_budget_flops", None)) else None
+        ),
+    )
 
     assert len(data) == args.rollout_batch_size, f"Got {len(data)} samples, expected {args.rollout_batch_size}"
     data = sorted(data, key=lambda group: group[0][0].index if isinstance(group[0], list) else group[0].index)
@@ -544,7 +555,21 @@ async def generate_rollout_async(
         sampling_params=state.sampling_params,
     )
 
-    return RolloutFnTrainOutput(samples=data, metrics=metric_gatherer.collect()), aborted_samples
+    return (
+        RolloutFnTrainOutput(
+            samples=data,
+            metrics=metric_gatherer.collect(),
+            dupo_observations=(
+                all_data if (getattr(args, "dupo", False) or getattr(args, "compute_budget_flops", None)) else None
+            ),
+            dupo_launched_count=(
+                launched_count
+                if (getattr(args, "dupo", False) or getattr(args, "compute_budget_flops", None))
+                else None
+            ),
+        ),
+        aborted_samples,
+    )
 
 
 EVAL_PROMPT_DATASET = {}

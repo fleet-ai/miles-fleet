@@ -28,6 +28,8 @@ from miles.rollout.base_types import (
     call_rollout_fn,
 )
 from miles.rollout.checkpoint_eval import CheckpointEvalFn, EvalSkip
+from miles.rollout.compute_accounting import ComputeLedger
+from miles.rollout.dupo import DupoConfig, DupoState, write_step_report
 from miles.rollout.inference_rollout.compatibility import call_rollout_function, load_rollout_function
 from miles.utils import object_store
 from miles.utils.audit_utils.event_analyzer import analyzer as event_analyzer
@@ -39,8 +41,10 @@ from miles.utils.hf_config import is_complete_hf_export
 from miles.utils.http_utils import init_http_client
 from miles.utils.logging_utils import configure_logger
 from miles.utils.metric_checker import MetricChecker
+from miles.utils.metric_utils import compute_rollout_step
 from miles.utils.misc import load_function
 from miles.utils.timer import timer
+from miles.utils.tracking_utils import tracking
 from miles.utils.tracking_utils.tracking import init_tracking
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -68,6 +72,21 @@ class RolloutManager:
 
         data_source_cls = load_function(self.args.data_source_path)
         self.data_source = data_source_cls(args)
+        self.dupo_state = (
+            DupoState(
+                DupoConfig(
+                    args.dupo_group_size,
+                    args.dupo_epsilon,
+                    args.dupo_threshold,
+                    args.dupo_retention,
+                    args.rollout_seed,
+                )
+            )
+            if getattr(args, "dupo", False)
+            else None
+        )
+
+        self.compute_ledger = ComputeLedger(args) if getattr(args, "compute_budget_flops", None) else None
 
         self.use_legacy_rollout_v1 = use_legacy_rollout_v1()
         if not self.use_legacy_rollout_v1:
@@ -153,6 +172,13 @@ class RolloutManager:
         with timer("rollout"):
             data, metadata, metrics = await self._get_rollout_data(rollout_id=rollout_id)
         save_debug_rollout_data(self.args, data, rollout_id=rollout_id, evaluation=False, metadata=metadata)
+        if self.dupo_state is not None and not data:
+            tracking.log(
+                self.args,
+                {**metrics, "rollout/step": compute_rollout_step(self.args, rollout_id), "dupo/optimizer_skipped": 1},
+                step_key="rollout/step",
+            )
+            return dict(sample_indices=[], data_ref=None, skip_training=True)
         log_rollout_data(rollout_id, self.args, data, metrics, time.time() - start_time)
         data = convert_samples_to_train_data(
             self.args,
@@ -256,10 +282,26 @@ class RolloutManager:
                     call_rollout_fn, self.generate_rollout, self.args, rollout_id, self.data_source, evaluation=False
                 )
             metrics = data.metrics
+            observations, launched = data.dupo_observations, data.dupo_launched_count
+            if self.dupo_state is not None:
+                if data.dupo_observations is None or data.dupo_launched_count is None:
+                    raise ValueError("DUPO rollout function did not provide all observations and launched count")
+                groups, dupo_metrics = self.dupo_state.process(
+                    self.args, rollout_id, data.samples, data.dupo_observations, data.dupo_launched_count
+                )
+                write_step_report(
+                    self.args.save, rollout_id, self.args, data.dupo_observations, data.samples, groups, dupo_metrics
+                )
+                data.samples = groups
+                metrics = {**(metrics or {}), **dupo_metrics}
             data = data.samples
             data, metadata = postprocess_rollout_data(
                 self.args, data, train_parallel_config=self.train_parallel_config
             )
+            if self.compute_ledger is not None:
+                self.compute_ledger.prepare(
+                    rollout_id, observations, launched, data, self.train_parallel_config["trainable_parameters"]
+                )
             if RolloutDataInjectionUtil.should_inject(self.args, rollout_id):
                 generated_data = data
                 data, metadata = RolloutDataInjectionUtil.load(self.args, rollout_id=rollout_id)
@@ -275,10 +317,37 @@ class RolloutManager:
     def save(self, rollout_id):
         if self.args.rollout_global_dataset:
             self.data_source.save(rollout_id)
+        if self.dupo_state is not None:
+            self.dupo_state.save(self.args.save, rollout_id)
+        if self.compute_ledger is not None:
+            self.compute_ledger.save(rollout_id)
         event_logger_checkpoint.snapshot(self.args, rollout_id)
 
     def load(self, rollout_id=None):
         self.data_source.load(rollout_id)
+        if self.dupo_state is not None:
+            self.dupo_state.load(self.args.load, rollout_id)
+        if self.compute_ledger is not None:
+            self.compute_ledger.load(self.args.load, rollout_id)
+
+    def get_compute_schedule(self):
+        return self.compute_ledger.schedule()
+
+    def complete_training(self, rollout_id):
+        if self.compute_ledger is None:
+            return {}
+        result = self.compute_ledger.complete(rollout_id)
+        tracking.log(
+            self.args,
+            {
+                **{f"compute/{key}": value for key, value in result["stages"].items()},
+                "compute/total": result["total"],
+                "compute/budget_fraction": result["total"] / result["budget"],
+                "rollout/step": compute_rollout_step(self.args, rollout_id),
+            },
+            step_key="rollout/step",
+        )
+        return result
 
     # -------------------------- offload/onload -----------------------------
 

@@ -1,0 +1,94 @@
+{
+  "source_sha256": "01539b819cb3a9d9b3e07faf5e606e6be5b273bf55db4cfe1dfe722b65a43f85",
+  "image": "radixark/miles@sha256:a7ef79b5c0d0cb1a5d6ab0f39a2693ea63ea369d9339d04b7b3e0b7ec23b5dfe",
+  "context": "nebius-mk8s-fleetai-training-e04zw4ye1k7wczqdw6",
+  "namespace": "fleet-train-jobs",
+  "queue_priority": "q1",
+  "pod_priority": "c1",
+  "budget_estimate": 2e+17,
+  "compute_hooks_enabled": false,
+  "run_steps_are_provisional": true,
+  "runs": [
+    {
+      "job": "neeraj-grpo-2b-train-01539b81",
+      "algorithm": "grpo",
+      "model": "2b",
+      "steps": 141,
+      "wandb": "https://wandb.ai/thefleet/dynamic-ungrouped-po/runs/dmmnzqdb",
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-grpo-2b-train-01539b81",
+      "status": "active"
+    },
+    {
+      "job": "neeraj-grpo-4b-train-01539b81",
+      "algorithm": "grpo",
+      "model": "4b",
+      "steps": 63,
+      "wandb": "https://wandb.ai/thefleet/dynamic-ungrouped-po/runs/ddwyj2r2",
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-grpo-4b-train-01539b81",
+      "status": "active"
+    },
+    {
+      "job": "neeraj-grpo-9b-train-01539b81",
+      "algorithm": "grpo",
+      "model": "9b",
+      "steps": 34,
+      "wandb": "https://wandb.ai/thefleet/dynamic-ungrouped-po/runs/5oym0x2s",
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-grpo-9b-train-01539b81",
+      "status": "cancelled_by_user"
+    },
+    {
+      "job": "neeraj-dupo-2b-train-01539b81",
+      "algorithm": "dupo",
+      "model": "2b",
+      "steps": 141,
+      "wandb": "https://wandb.ai/thefleet/dynamic-ungrouped-po/runs/70jxu61m",
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-dupo-2b-train-01539b81",
+      "status": "active"
+    },
+    {
+      "job": "neeraj-dupo-4b-train-01539b81",
+      "algorithm": "dupo",
+      "model": "4b",
+      "steps": 63,
+      "wandb": "https://wandb.ai/thefleet/dynamic-ungrouped-po/runs/xrybmkt3",
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-dupo-4b-train-01539b81",
+      "status": "active"
+    },
+    {
+      "job": "neeraj-dupo-9b-train-01539b81",
+      "algorithm": "dupo",
+      "model": "9b",
+      "steps": 34,
+      "wandb": "https://wandb.ai/thefleet/dynamic-ungrouped-po/runs/jufe0pvk",
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-dupo-9b-train-01539b81",
+      "status": "cancelled_by_user"
+    },
+    {
+      "job": "neeraj-grpo-0p8b-train-01539b81",
+      "algorithm": "grpo",
+      "model": "0p8b",
+      "steps": 334,
+      "wandb": "https://wandb.ai/thefleet/dynamic-ungrouped-po/runs/4bbznwon",
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-grpo-0p8b-train-01539b81",
+      "status": "active"
+    },
+    {
+      "job": "neeraj-dupo-0p8b-train-01539b81",
+      "algorithm": "dupo",
+      "model": "0p8b",
+      "steps": 334,
+      "wandb": "https://wandb.ai/thefleet/dynamic-ungrouped-po/runs/oasf552e",
+      "output": "/sfs/neeraj/dupo-v001/training/neeraj-dupo-0p8b-train-01539b81",
+      "status": "active"
+    }
+  ],
+  "active_models": [
+    "0p8b",
+    "2b",
+    "4b"
+  ],
+  "excluded_models": [
+    "9b"
+  ],
+  "matrix_change": "User explicitly restored 0.8B and excluded 9B; active six arms are 0.8B/2B/4B x GRPO/DUPO."
+}
