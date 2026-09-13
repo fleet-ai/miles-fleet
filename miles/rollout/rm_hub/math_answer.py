@@ -1,6 +1,6 @@
 """Final-answer scorer for GSM8K and AIME style problems.
 
-Version ``math-answer-v4``. Pure Python, no third-party imports, so the same
+Version ``math-answer-v5``. Pure Python, no third-party imports, so the same
 file runs inside the Miles training image, the baseline evaluation image and
 on a laptop.
 
@@ -40,7 +40,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from fractions import Fraction
 
-VERSION = "math-answer-v4"
+VERSION = "math-answer-v5"
 
 _SPECIAL_TOKEN = re.compile(r"<\|[^<>|]{1,40}\|>")
 _THINK_CLOSE = "</think>"
@@ -68,9 +68,21 @@ _ENV_LINE = re.compile(r"^\s*\\(?:begin|end)\s*{[a-zA-Z*]+}\s*$")
 # Text after the answer that restates the work: verification blocks, notes,
 # breakdown tables and drawings. Ignored when an answer precedes them.
 _TRAILING_HEADING = re.compile(
-    r"^\s*(?:\*\*|#+\s*|\*\(|\()?\s*(?:verification|verify|check(?:ing)?|double-check|breakdown|note|explanation|summary\s+of\s+(?:the\s+)?steps|why\s+this\s+works)\b",
+    r"^\s*(?:\*\*|#+\s*|\*\(|\()?\s*(?:here\s+is\s+(?:the\s+|a\s+)?(?:step-by-step\s+)?(?:breakdown|calculation|reasoning|solution|work)|"
+    r"verification|verify|check(?:ing)?|double-check|breakdown|note|explanation|summary\s+of\s+(?:the\s+)?steps|why\s+this\s+works)\b",
     re.IGNORECASE,
 )
+# A whole line that is a parenthetical or italic aside: "*(If the question implies ..., the answer would be 63.)*"
+_ASIDE_LINE = re.compile(r"^\s*\*?\s*\(.*\)\s*\*?\s*$")
+_VERIFICATION_WORDS = re.compile(
+    r"\b(?:verif(?:y|ies|ied|ication)|check(?:s|ed|ing)?|note|breakdown|match(?:es|ed)?|consistent|confirm(?:s|ed)?|"
+    r"as\s+expected|would\s+(?:be|result|give|have)|instead|assum(?:es|ing|ption))\b",
+    re.IGNORECASE,
+)
+# A "Note:"/"Explanation:" heading can sit mid-solution; it is cut only when an
+# explicit answer precedes it. Verification and breakdown blocks, rules,
+# drawings and closing asides are cut when any answer precedes them.
+_NOTE_HEADING = re.compile(r"^\s*(?:\*\*|#+\s*|\*\(|\()?\s*(?:note|explanation)\b", re.IGNORECASE)
 _TRAILING_ENV = re.compile(r"^\s*\\begin\s*{(?:tikzpicture|figure|table|tabular|asy)}")
 _BARE_LINE = re.compile(
     r"^\s*(?:\*\*|\\\(|\\\[|\$+|\\text\s*{|\\(?:boxed|fbox)\s*{)?\s*"
@@ -149,13 +161,30 @@ def _with_sign(phrase: str, num: str) -> str:
     return num
 
 
-def _number_in_phrase(phrase: str) -> str | None:
-    """The answer number in a short phrase: a bold number inside wins, else the last number."""
+_PAREN = re.compile(r"\([^()]*\)")
+
+
+def _drop_parenthetical_conversions(phrase: str) -> str:
+    """"**360 hours** (equivalent to **15 days**)": the parenthetical restates the
+    answer in other units; drop it when a number survives outside it."""
+    stripped = _PAREN.sub("", phrase)
+    return stripped if _NUMBER.search(stripped) else phrase
+
+
+def _number_in_phrase(phrase: str, *, first: bool = False) -> str | None:
+    """The answer number in a short phrase: a bold number inside wins (outside
+    any parenthetical conversion), else the last number, or the first when
+    ``first`` (an explicit "Answer: 5 cars ... in the first 15 minutes")."""
+    phrase = _drop_parenthetical_conversions(phrase)
     bold = [b for b in (m.group(1) or m.group(2) for m in _BOLD.finditer(phrase)) if _NUMBER.search(b)]
     if bold:
-        return _with_sign(bold[-1], _NUMBER.findall(bold[-1])[-1])
+        pick = bold[0] if first else bold[-1]
+        nums = _NUMBER.findall(pick)
+        return _with_sign(pick, nums[0] if first else nums[-1])
     nums = _NUMBER.findall(phrase)
-    return _with_sign(phrase, nums[-1]) if nums else None
+    if not nums:
+        return None
+    return _with_sign(phrase, nums[0] if first else nums[-1])
 
 
 def _content_lines(text: str) -> list[tuple[int, str]]:
@@ -183,7 +212,7 @@ def _stated_tail(lines: list[str], i: int, tail: str) -> str | None:
             return cands[-1]
     if _BARE_LINE.match(tail):
         return tail
-    return _number_in_phrase(tail)
+    return _number_in_phrase(tail, first=True)
 
 
 def positioned_candidates(text: str) -> list[tuple[int, int, str, str]]:
@@ -197,7 +226,7 @@ def positioned_candidates(text: str) -> list[tuple[int, int, str, str]]:
             cand = _stated_tail(lines, i, m.group(1).strip())
             if cand is not None:
                 out.append((i, 2, "stated", cand))
-        for bm in _BOLD.finditer(line):
+        for bm in _BOLD.finditer(_drop_parenthetical_conversions(line)):
             span = (bm.group(1) or bm.group(2)).strip()
             if _HEADING_LIKE.search(span) or not _NUMBER.search(span):
                 continue
@@ -275,22 +304,61 @@ def _answers_match(candidate: str | None, label: str | None) -> bool:
         return False
 
 
+def _strong_candidates(text: str) -> bool:
+    """True when the text commits to an answer explicitly: boxed, stated,
+    bare number line or a bold number (a plain concluding sentence is not
+    enough to justify dropping what follows it)."""
+    if boxed_candidates(text) or bare_line_candidate(text) is not None:
+        return True
+    return any(c[2] in ("stated", "bold") for c in positioned_candidates(text))
+
+
 def trim_trailing_sections(text: str) -> str:
-    """Drop a trailing verification/note/drawing block when an answer precedes it."""
+    """Drop a trailing verification/breakdown/note/drawing block, or a final
+    parenthetical aside, when an explicit answer precedes it and nothing
+    after it commits to an answer (no boxed, stated or bare number line).
+    A mid-solution "Note:" followed by more solving is left alone because
+    the text before it has no explicit answer yet."""
     lines = text.splitlines()
-    cut = None
-    for i, ln in enumerate(lines):
-        if _TRAILING_HEADING.match(ln) or _TRAILING_ENV.match(ln) or ln.strip() == "***":
-            if cut is None:
-                cut = i
-        elif cut is not None and not (_TRAILING_HEADING.match(ln) or ln.startswith((" ", "\t", "*", "-", "$", "\\", "|", "(")) or not ln.strip()):
-            cut = None  # ordinary prose resumed; the block was not trailing
-    if cut is None or cut == 0:
-        return text
-    head = "\n".join(lines[:cut])
-    if bare_line_candidate(head) is None and not positioned_candidates(head):
-        return text
-    return head
+    content = [i for i, ln in enumerate(lines) if ln.strip()]
+    # kind: "heading" needs an explicit answer before it; "env" (drawing, rule)
+    # needs any answer before it; "aside" (closing parenthetical) needs any
+    # answer before it and is never itself the answer.
+    cuts = [(i, "env" if (_TRAILING_ENV.match(ln) or ln.strip() == "***") else "heading")
+            for i, ln in enumerate(lines)
+            if _TRAILING_HEADING.match(ln) or _TRAILING_ENV.match(ln) or ln.strip() == "***"]
+    if len(content) >= 2:
+        last = lines[content[-1]].rstrip()
+        if _ASIDE_LINE.match(last):
+            cuts.append((content[-1], "aside"))
+        elif last.endswith((")*", ")")):
+            # multi-line aside: walk back to the line that opens it
+            for j in reversed(content[:-1]):
+                if not lines[j].strip():
+                    break
+                if re.match(r"^\s*\*?\s*\(", lines[j]):
+                    cuts.append((j, "aside"))
+                    break
+    for cut, kind in sorted(set(cuts)):
+        if cut == 0:
+            continue
+        head, tail = "\n".join(lines[:cut]), "\n".join(lines[cut:])
+        if kind == "heading" and not _strong_candidates(head):
+            continue  # a heading needs an explicit answer before it
+        if kind != "heading" and bare_line_candidate(head) is None and not positioned_candidates(head):
+            continue
+        if boxed_candidates(tail) or bare_line_candidate(tail) is not None:
+            continue
+        tail_pos = positioned_candidates(tail)
+        if any(c[2] == "stated" for c in tail_pos):
+            continue
+        if kind != "aside":
+            tail_lines = lines[cut:]
+            last_idx = max(i for i, ln in enumerate(tail_lines) if ln.strip())
+            if any(c[2] == "bold" and c[0] == last_idx for c in tail_pos):
+                continue  # the block ends with a bold answer sentence
+        return head
+    return text
 
 
 def extract(text: str, *, truncated: bool = False) -> tuple[str | None, list[str]]:
