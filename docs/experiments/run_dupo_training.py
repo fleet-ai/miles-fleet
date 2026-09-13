@@ -21,6 +21,11 @@ from huggingface_hub import snapshot_download
 import miles.utils.external_utils.command_utils as U
 from miles.rollout.compute_accounting import VERSION, Qwen35Flops
 
+REWARDS = {
+    "deepscaler": "--rm-type deepscaler",
+    "math-answer": "--custom-rm-path miles.rollout.rm_hub.math_answer.miles_batched_reward",
+}
+
 REVISIONS = {
     "0.8B": "2fc06364715b967f1860aea9cf38778875588b17",
     "2B": "15852e8c16360a2fea060d615a32b45270f8a8fc",
@@ -45,6 +50,14 @@ class ScriptArgs(U.ExecuteTrainConfig):
     max_prompt_len: int = 2048
     rollout_batch_size: int = 3
     megatron_path: str = "/root/Megatron-LM"
+    # Training reward: "deepscaler" is Miles' boxed-only grader (the canonical
+    # condition); "math-answer" is miles.rollout.rm_hub.math_answer, which
+    # reads the committed final answer in any format.
+    reward: str = "deepscaler"
+    # SHA-256 of the frozen train.jsonl this run must use.
+    expected_train_sha256: str = "5de15338859d28980c0a2a9b060c58c4e5a25f824b41e6132d8a2e8a68e19879"
+    # W&B run name (Miles names the run after the group); default: the output directory name.
+    wandb_group: str = ""
 
 
 def execute(args):
@@ -61,8 +74,10 @@ def execute(args):
         raise ValueError("Resume must load the existing run's own checkpoint directory")
     ready = json.loads((data / "ready.json").read_text())
     train_hash = hashlib.sha256((data / "train.jsonl").read_bytes()).hexdigest()
-    if train_hash != "5de15338859d28980c0a2a9b060c58c4e5a25f824b41e6132d8a2e8a68e19879":
-        raise ValueError("Training data differs from the frozen balanced schedule")
+    if train_hash != args.expected_train_sha256:
+        raise ValueError(f"Training data differs from the expected schedule: {train_hash} != {args.expected_train_sha256}")
+    if args.reward not in REWARDS:
+        raise ValueError(f"reward must be one of {sorted(REWARDS)}")
     snapshot_download(f"Qwen/Qwen3.5-{args.model_size}", revision=REVISIONS[args.model_size], local_dir=model)
     config = json.loads((model / "config.json").read_text())["text_config"]
     estimator = Qwen35Flops(config)
@@ -84,7 +99,7 @@ def execute(args):
         "--megatron-to-hf-mode bridge "
         f"--prompt-data {q(str(data / 'train.jsonl'))} --input-key prompt --label-key label --metadata-key metadata "
         "--apply-chat-template --apply-chat-template-kwargs '{\"enable_thinking\": true}' --rollout-shuffle "
-        "--rollout-function-path miles.rollout.sglang_rollout.generate_rollout --rm-type deepscaler "
+        f"--rollout-function-path miles.rollout.sglang_rollout.generate_rollout {REWARDS[args.reward]} "
         f"--num-rollout {100000 if args.enable_compute_budget else args.estimated_rollout_steps} --rollout-batch-size {args.rollout_batch_size} --over-sampling-batch-size {args.rollout_batch_size} "
         f"--n-samples-per-prompt 4 --rollout-max-response-len {args.max_response_len} --rollout-max-prompt-len {args.max_prompt_len} "
         f"--global-batch-size {args.rollout_batch_size * 4} --rollout-seed 1234 --seed 1234 "
@@ -99,7 +114,7 @@ def execute(args):
         f"--sglang-max-running-requests {args.rollout_batch_size * 4} "
         "--colocate --actor-num-nodes 1 --actor-num-gpus-per-node 1 --num-gpus-per-node 1 "
         f"--save-debug-rollout-data {q(str(output / 'rollouts' / '{rollout_id}.pt'))} "
-        "--use-wandb --wandb-project dynamic-ungrouped-po --wandb-group neeraj-dupo-v001-compute-v1 "
+        f"--use-wandb --wandb-project dynamic-ungrouped-po --wandb-group {q(args.wandb_group or output.name)} "
         "--disable-wandb-random-suffix "
     )
     if args.enable_compute_budget:
@@ -111,6 +126,8 @@ def execute(args):
     if args.algorithm == "dupo":
         train_args += "--dupo --dupo-group-size 4 --dupo-epsilon 0.05 --dupo-threshold 1 --dupo-retention symmetric "
     settings = dict(
+        reward=args.reward,
+        reward_args=REWARDS[args.reward],
         provisional_budget=args.compute_budget_flops,
         compute_hooks_enabled=args.enable_compute_budget,
         estimator=VERSION,
