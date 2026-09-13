@@ -58,6 +58,9 @@ class ScriptArgs(U.ExecuteTrainConfig):
     expected_train_sha256: str = "5de15338859d28980c0a2a9b060c58c4e5a25f824b41e6132d8a2e8a68e19879"
     # W&B run name (Miles names the run after the group); default: the output directory name.
     wandb_group: str = ""
+    # Optimizer learning rate (constant) and samples per prompt (the GRPO group).
+    lr: float = 2e-6
+    n_samples_per_prompt: int = 4
 
 
 def execute(args):
@@ -84,7 +87,7 @@ def execute(args):
     # Six full forwards bound generation + reference + actor + train + backward.
     # 40B parameters is a conservative bound for every supported dense model.
     max_step = (
-        6 * args.rollout_batch_size * 4 * estimator.forward(args.max_prompt_len + args.max_response_len)
+        6 * args.rollout_batch_size * args.n_samples_per_prompt * estimator.forward(args.max_prompt_len + args.max_response_len)
         + 15 * 40_000_000_000
     )
     if args.enable_compute_budget and max_step > args.compute_budget_flops * args.overshoot_tolerance:
@@ -101,17 +104,17 @@ def execute(args):
         "--apply-chat-template --apply-chat-template-kwargs '{\"enable_thinking\": true}' --rollout-shuffle "
         f"--rollout-function-path miles.rollout.sglang_rollout.generate_rollout {REWARDS[args.reward]} "
         f"--num-rollout {100000 if args.enable_compute_budget else args.estimated_rollout_steps} --rollout-batch-size {args.rollout_batch_size} --over-sampling-batch-size {args.rollout_batch_size} "
-        f"--n-samples-per-prompt 4 --rollout-max-response-len {args.max_response_len} --rollout-max-prompt-len {args.max_prompt_len} "
-        f"--global-batch-size {args.rollout_batch_size * 4} --rollout-seed 1234 --seed 1234 "
+        f"--n-samples-per-prompt {args.n_samples_per_prompt} --rollout-max-response-len {args.max_response_len} --rollout-max-prompt-len {args.max_prompt_len} "
+        f"--global-batch-size {args.rollout_batch_size * args.n_samples_per_prompt} --rollout-seed 1234 --seed 1234 "
         "--rollout-temperature 0.6 --rollout-top-p 0.95 --rollout-top-k 20 "
         "--tensor-model-parallel-size 1 --pipeline-model-parallel-size 1 --context-parallel-size 1 "
         "--use-dynamic-batch-size --max-tokens-per-gpu 12000 --use-dynamic-global-batch-size "
         "--advantage-estimator grpo --calculate-per-token-loss --disable-grpo-std-normalization "
         "--use-kl-loss --kl-loss-coef 0.001 --kl-loss-type low_var_kl "
-        "--optimizer adam --lr 2e-6 --lr-decay-style constant --weight-decay 0.1 --adam-beta1 0.9 --adam-beta2 0.98 "
+        f"--optimizer adam --lr {args.lr} --lr-decay-style constant --weight-decay 0.1 --adam-beta1 0.9 --adam-beta2 0.98 "
         "--attention-dropout 0.0 --hidden-dropout 0.0 --clip-grad 1.0 --bf16 --use-distributed-optimizer "
         "--rollout-num-gpus-per-engine 1 --sglang-mem-fraction-static 0.15 --sglang-disable-cuda-graph "
-        f"--sglang-max-running-requests {args.rollout_batch_size * 4} "
+        f"--sglang-max-running-requests {args.rollout_batch_size * args.n_samples_per_prompt} "
         "--colocate --actor-num-nodes 1 --actor-num-gpus-per-node 1 --num-gpus-per-node 1 "
         f"--save-debug-rollout-data {q(str(output / 'rollouts' / '{rollout_id}.pt'))} "
         f"--use-wandb --wandb-project dynamic-ungrouped-po --wandb-group {q(args.wandb_group or output.name)} "
@@ -126,6 +129,10 @@ def execute(args):
     if args.algorithm == "dupo":
         train_args += "--dupo --dupo-group-size 4 --dupo-epsilon 0.05 --dupo-threshold 1 --dupo-retention symmetric "
     settings = dict(
+        lr=args.lr,
+        n_samples_per_prompt=args.n_samples_per_prompt,
+        rollout_batch_size=args.rollout_batch_size,
+        max_response_len=args.max_response_len,
         reward=args.reward,
         reward_args=REWARDS[args.reward],
         provisional_budget=args.compute_budget_flops,
