@@ -116,4 +116,4 @@ need GPU validation; do not enable them silently in running experiments.
 6. Finish analysis and handoff. No further model/dataset/reward expansion.
 
 Before the artifact commit, every hook in `pre-commit run --all-files` passed.
-The complete result is preserved in `evidence/pre-commit-final.log`.
+The complete result is preserved in `evidence/pre-commit-final.txt`.
