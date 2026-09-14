@@ -62,6 +62,8 @@ class ScriptArgs(U.ExecuteTrainConfig):
     wandb_group: str = ""
     # Optimizer learning rate (constant) and samples per prompt (the GRPO group).
     lr: float = 2e-6
+    # Coefficient of the low-variance KL loss against the reference (base) checkpoint.
+    kl_loss_coef: float = 0.001
     n_samples_per_prompt: int = 4
     # GPUs for the run: colocated, one sglang engine per GPU and Megatron data
     # parallel across them. Scale rollout_batch_size with it; the FLOP budget
@@ -122,7 +124,7 @@ def execute(args):
         "--tensor-model-parallel-size 1 --pipeline-model-parallel-size 1 --context-parallel-size 1 "
         f"--use-dynamic-batch-size --max-tokens-per-gpu {args.max_prompt_len + args.max_response_len + 512} --use-dynamic-global-batch-size "
         "--advantage-estimator grpo --calculate-per-token-loss --disable-grpo-std-normalization "
-        "--use-kl-loss --kl-loss-coef 0.001 --kl-loss-type low_var_kl "
+        f"--use-kl-loss --kl-loss-coef {args.kl_loss_coef} --kl-loss-type low_var_kl "
         f"--optimizer adam --lr {args.lr} --lr-decay-style constant --weight-decay 0.1 --adam-beta1 0.9 --adam-beta2 0.98 "
         "--attention-dropout 0.0 --hidden-dropout 0.0 --clip-grad 1.0 --bf16 --use-distributed-optimizer "
         "--rollout-num-gpus-per-engine 1 --sglang-mem-fraction-static 0.15 --sglang-disable-cuda-graph "
@@ -150,6 +152,7 @@ def execute(args):
     settings = dict(
         gpus=args.gpus,
         lr=args.lr,
+        kl_loss_coef=args.kl_loss_coef,
         n_samples_per_prompt=args.n_samples_per_prompt,
         rollout_batch_size=args.rollout_batch_size,
         dynamic_filter=args.dynamic_filter,
