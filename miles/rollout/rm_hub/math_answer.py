@@ -469,3 +469,29 @@ async def miles_reward(args, sample_or_samples, **kwargs):
 
 
 miles_batched_reward = miles_reward
+
+
+# Truncation penalty (dupo-v001 protocol, 09-14): a response that hits the
+# length cap without a scorable commitment earns -0.5 instead of 0, so
+# not finishing is worse than a committed wrong answer. Correct answers keep
+# 1 and committed wrong answers keep 0; the scorer itself is unchanged.
+TRUNCATION_PENALTY = 0.5
+
+
+def _score_sample_tp(sample) -> float:
+    truncated, thinking = _sample_flags(sample)
+    result = score(sample.response, sample.label, truncated=truncated, thinking_opened_in_prompt=thinking)
+    md = getattr(sample, "metadata", None)
+    if isinstance(md, dict):
+        d = result.to_dict()
+        md["scorer"] = {k: d[k] for k in ("reason", "tier", "extracted", "normalized", "ambiguous", "truncated", "version")}
+        md["scorer"]["truncation_penalty"] = TRUNCATION_PENALTY
+    if truncated and result.score == 0:
+        return -TRUNCATION_PENALTY
+    return float(result.score)
+
+
+async def miles_reward_tp05(args, sample_or_samples, **kwargs):
+    if isinstance(sample_or_samples, (list, tuple)):
+        return [_score_sample_tp(s) for s in sample_or_samples]
+    return _score_sample_tp(sample_or_samples)

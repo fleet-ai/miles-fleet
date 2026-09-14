@@ -24,6 +24,8 @@ from miles.rollout.compute_accounting import VERSION, Qwen35Flops
 REWARDS = {
     "deepscaler": "--rm-type deepscaler",
     "math-answer": "--custom-rm-path miles.rollout.rm_hub.math_answer.miles_reward",
+    # math-answer with -0.5 for a capped response without a scorable answer (protocol 09-14).
+    "math-answer-tp05": "--custom-rm-path miles.rollout.rm_hub.math_answer.miles_reward_tp05",
 }
 
 REVISIONS = {
@@ -65,6 +67,12 @@ class ScriptArgs(U.ExecuteTrainConfig):
     # parallel across them. Scale rollout_batch_size with it; the FLOP budget
     # is per run, not per GPU.
     gpus: int = 1
+    # Drop prompt groups whose rewards have zero variance (all correct or all
+    # wrong) and keep sampling until the batch is full (DAPO-style dynamic
+    # sampling); over-sampling granularity is 2x the batch.
+    dynamic_filter: bool = False
+    # Checkpoint cadence in optimizer steps (provisional runs only).
+    save_interval: int = 10
 
 
 def execute(args):
@@ -107,7 +115,7 @@ def execute(args):
         f"--prompt-data {q(str(data / 'train.jsonl'))} --input-key prompt --label-key label --metadata-key metadata "
         "--apply-chat-template --apply-chat-template-kwargs '{\"enable_thinking\": true}' --rollout-shuffle "
         f"--rollout-function-path miles.rollout.sglang_rollout.generate_rollout {REWARDS[args.reward]} "
-        f"--num-rollout {100000 if args.enable_compute_budget else args.estimated_rollout_steps} --rollout-batch-size {args.rollout_batch_size} --over-sampling-batch-size {args.rollout_batch_size} "
+        f"--num-rollout {100000 if args.enable_compute_budget else args.estimated_rollout_steps} --rollout-batch-size {args.rollout_batch_size} "
         f"--n-samples-per-prompt {args.n_samples_per_prompt} --rollout-max-response-len {args.max_response_len} --rollout-max-prompt-len {args.max_prompt_len} "
         f"--global-batch-size {args.rollout_batch_size * args.n_samples_per_prompt} --rollout-seed 1234 --seed 1234 "
         "--rollout-temperature 0.6 --rollout-top-p 0.95 --rollout-top-k 20 "
@@ -128,7 +136,14 @@ def execute(args):
         train_args += f"--compute-budget-flops {args.compute_budget_flops} --compute-checkpoint-count {args.checkpoint_count} --compute-overshoot-tolerance {args.overshoot_tolerance} "
     else:
         train_args += (
-            "--recompute-granularity full --recompute-method uniform --recompute-num-layers 1 --save-interval 10 "
+            f"--recompute-granularity full --recompute-method uniform --recompute-num-layers 1 --save-interval {args.save_interval} "
+        )
+    if not args.dynamic_filter:
+        train_args += f"--over-sampling-batch-size {args.rollout_batch_size} "
+    if args.dynamic_filter:
+        train_args += (
+            "--dynamic-sampling-filter-path miles.rollout.filter_hub.dynamic_sampling_filters.check_reward_nonzero_std "
+            f"--over-sampling-batch-size {2 * args.rollout_batch_size} "
         )
     if args.algorithm == "dupo":
         train_args += "--dupo --dupo-group-size 4 --dupo-epsilon 0.05 --dupo-threshold 1 --dupo-retention symmetric "
@@ -137,6 +152,8 @@ def execute(args):
         lr=args.lr,
         n_samples_per_prompt=args.n_samples_per_prompt,
         rollout_batch_size=args.rollout_batch_size,
+        dynamic_filter=args.dynamic_filter,
+        save_interval=args.save_interval,
         max_response_len=args.max_response_len,
         reward=args.reward,
         reward_args=REWARDS[args.reward],
