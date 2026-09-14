@@ -1,6 +1,6 @@
 """Final-answer scorer for GSM8K and AIME style problems.
 
-Version ``math-answer-v5``. Pure Python, no third-party imports, so the same
+Version ``math-answer-v6``. Pure Python, no third-party imports, so the same
 file runs inside the Miles training image, the baseline evaluation image and
 on a laptop.
 
@@ -40,7 +40,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from fractions import Fraction
 
-VERSION = "math-answer-v5"
+VERSION = "math-answer-v6"
 
 _SPECIAL_TOKEN = re.compile(r"<\|[^<>|]{1,40}\|>")
 _THINK_CLOSE = "</think>"
@@ -59,7 +59,16 @@ _STATED_MID = re.compile(r"\b(?:the\s+)?(?:final\s+)?answer\s+is\s*(?:\*\*)?\s*:
 _BOLD = re.compile(r"\*\*([^*\n]{1,200}?)\*\*|\\(?:mathbf|textbf)\s*{([^{}\n]{1,200})}")
 _NUMBER = re.compile(r"[-−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s*/\s*\d+)?")
 _CONCLUSION_WORDS = re.compile(
-    r"\b(?:therefore|thus|so|hence|total|answer|is|are|be|equals?|gets?|needs?|has|have|will|remainder|value)\b|=",
+    r"\b(?:therefore|thus|so|hence|total|answer|is|are|was|were|be|equals?|gets?|needs?|has|have|will|costs?|remainder|value)\b|=",
+    re.IGNORECASE,
+)
+# "James needs 21 yards of velvet to make 6 cloaks and 12 hats.": in a plain
+# concluding sentence with several numbers and no equation, the answer is the
+# number right after the concluding verb; the later numbers restate the task.
+_VERB_THEN_NUMBER = re.compile(
+    r"\b(?:is|are|was|were|be|equals?|gets?|needs?|has|have|will\s+(?:be|have|need|get)|costs?|makes?|earns?|spends?|pays?|saves?)\s+"
+    r"(?:a\s+total\s+of\s+|about\s+|approximately\s+|exactly\s+|only\s+|now\s+|still\s+|left\s+with\s+)?"
+    r"(?:\\\(|\\\[|\$+|\\\$)?\s*(?P<num>[-−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s*/\s*\d+)?)",
     re.IGNORECASE,
 )
 _HEADING_LIKE = re.compile(r"(?::\s*$)|^(?:step|case|part|section)\b", re.IGNORECASE)
@@ -68,7 +77,7 @@ _ENV_LINE = re.compile(r"^\s*\\(?:begin|end)\s*{[a-zA-Z*]+}\s*$")
 # Text after the answer that restates the work: verification blocks, notes,
 # breakdown tables and drawings. Ignored when an answer precedes them.
 _TRAILING_HEADING = re.compile(
-    r"^\s*(?:\*\*|#+\s*|\*\(|\()?\s*(?:here\s+is\s+(?:the\s+|a\s+)?(?:step-by-step\s+)?(?:breakdown|calculation|reasoning|solution|work)|"
+    r"^\s*(?:(?:[-*•]|\d+[.)])\s+(?=\*\*))?(?:\*\*|#+\s*|\*\(|\()?\s*(?:here\s+is\s+(?:the\s+|a\s+)?(?:step-by-step\s+)?(?:breakdown|calculation|reasoning|solution|work)|"
     r"verification|verify|check(?:ing)?|double-check|breakdown|note|explanation|summary\s+of\s+(?:the\s+)?steps|why\s+this\s+works)\b",
     re.IGNORECASE,
 )
@@ -237,7 +246,13 @@ def positioned_candidates(text: str) -> list[tuple[int, int, str, str]]:
         i, line = content[-1]
         one_number = len(_NUMBER.findall(line)) == 1
         if len(line.split()) <= 60 and (_CONCLUSION_WORDS.search(line) or one_number):
-            num = _number_in_phrase(line)
+            num = None
+            if not one_number and "=" not in line and not _BOLD.search(line):
+                m = _VERB_THEN_NUMBER.search(_drop_parenthetical_conversions(line))
+                if m:
+                    num = _with_sign(line, m.group("num"))
+            if num is None:
+                num = _number_in_phrase(line)
             if num is not None:
                 out.append((i, 0, "last_line", num))
     return out
