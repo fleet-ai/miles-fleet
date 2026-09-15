@@ -9,30 +9,40 @@ import logging
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from sglang.srt.entrypoints.anthropic import utils as anthropic_utils
-from sglang.srt.entrypoints.anthropic.serving import convert_response, convert_to_chat_completion_request
 from sglang.srt.entrypoints.openai.protocol import ChatCompletionResponse
 from sglang.srt.parser.template_detection import detect_inline_system_support
 from starlette.responses import Response
 
-from miles.rollout.session.anthropic_adapter import (
-    _ANTHROPIC_ERROR_HEADER_ALLOWLIST as _ANTHROPIC_ERROR_HEADER_ALLOWLIST,
-)
-from miles.rollout.session.anthropic_adapter import (
-    _ANTHROPIC_ERROR_HEADER_PREFIXES as _ANTHROPIC_ERROR_HEADER_PREFIXES,
-)
-from miles.rollout.session.anthropic_adapter import (
-    _anthropic_error_response,
-    _anthropic_sse_body,
-    _anthropic_wire_json,
-    _parse_anthropic_request,
-    _restore_anthropic_reasoning_history,
-    _strip_anthropic_reasoning_history,
-)
-from miles.rollout.session.anthropic_adapter import (
-    _validate_anthropic_content_block as _validate_anthropic_content_block,
-)
-from miles.rollout.session.anthropic_adapter import _validate_anthropic_features
+try:
+    from sglang.srt.entrypoints.anthropic import utils as anthropic_utils
+    from sglang.srt.entrypoints.anthropic.serving import convert_response, convert_to_chat_completion_request
+
+    from miles.rollout.session.anthropic_adapter import (
+        _ANTHROPIC_ERROR_HEADER_ALLOWLIST as _ANTHROPIC_ERROR_HEADER_ALLOWLIST,
+    )
+    from miles.rollout.session.anthropic_adapter import (
+        _ANTHROPIC_ERROR_HEADER_PREFIXES as _ANTHROPIC_ERROR_HEADER_PREFIXES,
+    )
+    from miles.rollout.session.anthropic_adapter import (
+        _anthropic_error_response,
+        _anthropic_sse_body,
+        _anthropic_wire_json,
+        _parse_anthropic_request,
+        _restore_anthropic_reasoning_history,
+        _strip_anthropic_reasoning_history,
+    )
+    from miles.rollout.session.anthropic_adapter import (
+        _validate_anthropic_content_block as _validate_anthropic_content_block,
+    )
+    from miles.rollout.session.anthropic_adapter import _validate_anthropic_features
+except ImportError as error:
+    # The Anthropic Messages route needs sglang's anthropic entrypoint (its
+    # `utils` and converters). Older sglang builds ship without it; the OpenAI
+    # session routes do not depend on it, so the server still comes up and only
+    # that route is left unregistered (setup_session_routes logs the reason).
+    ANTHROPIC_MESSAGES_IMPORT_ERROR: ImportError | None = error
+else:
+    ANTHROPIC_MESSAGES_IMPORT_ERROR = None
 from miles.rollout.session.core import JSON_MEDIA_TYPE, SessionCore, _render_json
 from miles.rollout.session.errors import SessionError
 from miles.rollout.session.linear_trajectory import SessionRegistry
@@ -44,6 +54,16 @@ from miles.utils.chat_template_utils.message_matcher_hub import (
 from miles.utils.processing_utils import load_tokenizer
 
 logger = logging.getLogger(__name__)
+
+
+def register_anthropic_messages_route(app, handler) -> bool:
+    """Register the Anthropic Messages route when sglang's anthropic entrypoint
+    imported; otherwise log why and leave it out (the OpenAI routes stand)."""
+    if ANTHROPIC_MESSAGES_IMPORT_ERROR is not None:
+        logger.warning("Anthropic Messages route not registered: %s", ANTHROPIC_MESSAGES_IMPORT_ERROR)
+        return False
+    app.post("/sessions/{session_id}/v1/messages")(handler)
+    return True
 
 
 def setup_session_routes(app, backend, args, *, use_addition_r3: bool = False):
@@ -119,7 +139,6 @@ def setup_session_routes(app, backend, args, *, use_addition_r3: bool = False):
         )
 
     # Keep before session_proxy: Starlette's first match must not bypass session/TITO.
-    @app.post("/sessions/{session_id}/v1/messages")
     async def anthropic_messages(request: Request, session_id: str):
         """Serve Anthropic Messages through the OpenAI session path."""
         body = await request.body()
@@ -189,6 +208,8 @@ def setup_session_routes(app, backend, args, *, use_addition_r3: bool = False):
             # Post-commit failures keep the record and return JSON 500, never partial SSE.
             logger.exception("Anthropic response conversion failed for session %s", session_id)
             return _anthropic_error_response(500, b"")
+
+    register_anthropic_messages_route(app, anthropic_messages)
 
     @app.post("/sessions/{session_id}/samples")
     async def collect_samples(request: Request, session_id: str):
