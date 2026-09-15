@@ -1,6 +1,7 @@
 """CPU integration checks for Bayesian selection and Miles' unchanged GRPO loss path."""
 
 import asyncio
+import json
 from argparse import Namespace
 
 import pytest
@@ -10,7 +11,7 @@ from miles.backends.training_utils.dupo import train_actor_or_skip
 from miles.backends.training_utils.loss_hub.advantages import compute_advantages
 from miles.ray.rollout.rollout_data_conversion import postprocess_rollout_data
 from miles.ray.rollout.train_data_conversion import convert_samples_to_train_data, split_train_data_by_dp_scheduled_raw
-from miles.rollout.dupo import DupoConfig, DupoState, keep_probability
+from miles.rollout.dupo import DupoConfig, DupoState, keep_probability, write_step_report
 from miles.utils.types import Sample
 
 
@@ -224,3 +225,55 @@ def test_partial_singleton_and_nonbinary_rewards_reach_training_tensors(rewards)
     assert state.counts["arithmetic"] == [1 + sum(r >= 1 for r in rewards), 1 + sum(r < 1 for r in rewards)]
     singleton = groups[-1][0]
     assert expected[singleton.index] == 0
+
+
+def agentic_sample(index, reward, status=Sample.Status.COMPLETED, **changes):
+    """One Sample per rollout as the agentic generator returns it: rollout_id
+    set, the harness's own metadata beside task_type/task_id."""
+    values = dict(
+        rollout_id=index,
+        status=status,
+        metadata={
+            "task_type": "comp_n4",
+            "task_id": f"dataminer_v2_comp_n4_src{index}",
+            "task_key": f"dataminer_v2_comp_n4_src{index}",
+            "data_version": "dev-20260907",
+            "reward": reward,
+        },
+    )
+    return make_sample(index, reward, **(values | changes))
+
+
+def test_agentic_single_sample_with_rollout_id_passes_and_compact_siblings_fail():
+    args = make_args()
+    samples = [agentic_sample(i, float(i % 2)) for i in range(4)]
+    groups, _ = DupoState(DupoConfig()).process(args, 0, [samples], [samples], 4)
+    assert sorted(sample.index for group in groups for sample in group) == [0, 1, 2, 3]
+    siblings = [agentic_sample(i, 1.0, rollout_id=0) for i in range(2)]
+    with pytest.raises(ValueError, match="compact multi-segment"):
+        DupoState(DupoConfig()).process(args, 0, [siblings], [siblings], 2)
+    nested = [[agentic_sample(0, 1.0)]]
+    with pytest.raises(ValueError, match="one Sample per rollout"):
+        DupoState(DupoConfig()).process(args, 0, [nested], [nested], 1)
+
+
+def test_aborted_sample_is_ungraded_whatever_its_reward_field_holds(tmp_path):
+    args = make_args()
+    graded = [agentic_sample(i, float(i % 2)) for i in range(4)]
+    aborted = [
+        agentic_sample(4, 0.0, status=Sample.Status.ABORTED, tokens=[], response_length=0),
+        agentic_sample(5, None, status=Sample.Status.ABORTED, tokens=[], response_length=0),
+    ]
+    samples = graded + aborted
+    state = DupoState(DupoConfig())
+    groups, metrics = state.process(args, 0, [samples], [samples], 6)
+    assert state.counts == {"comp_n4": [3, 3]}
+    assert metrics["dupo/graded"] == 4 and metrics["dupo/ungraded"] == 2
+    assert metrics["dupo/graded_reward_mean"] == 0.5 and metrics["dupo/graded_pass_rate"] == 0.5
+    assert sorted(sample.index for group in groups for sample in group) == [0, 1, 2, 3]
+    write_step_report(str(tmp_path), 0, args, [samples], [samples], groups, metrics)
+    report = json.loads((tmp_path / "dupo_steps" / "0.json").read_text())
+    rows = {row["index"]: row for row in report["observations"]}
+    assert rows[4]["reward"] is None and rows[4]["status"] == "aborted" and rows[4]["total_tokens"] == 0
+    assert rows[4]["accepted"] is False and rows[5]["accepted"] is False
+    assert rows[0]["status"] == "completed" and rows[0]["response_tokens"] == 2 and rows[0]["prefix_cache"] is not None

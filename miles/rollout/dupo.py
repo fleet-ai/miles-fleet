@@ -41,12 +41,23 @@ def validate_sample(sample: Sample) -> None:
     for key in ("task_type", "task_id"):
         if not isinstance(sample.metadata.get(key), str) or not sample.metadata[key]:
             raise ValueError(f"DUPO requires explicit nonempty metadata[{key!r}] on every rollout")
-    if sample.index is None or sample.rollout_id is not None or sample.adapter is not None:
-        raise ValueError("DUPO requires unique sample indices, no compact segments, and no adapters")
+    if sample.index is None or sample.adapter is not None:
+        raise ValueError("DUPO requires unique sample indices and no adapters")
+
+
+def validate_single_segment(samples: list[Sample]) -> None:
+    """Reject compact multi-segment rollouts: siblings of one rollout share a
+    ``rollout_id``. A rollout_id on a lone sample (the agentic generator sets
+    one per rollout) is fine; the same id on two samples is not."""
+    ids = [sample.rollout_id for sample in samples if sample.rollout_id is not None]
+    if len(ids) != len(set(ids)):
+        raise ValueError("DUPO requires one Sample per rollout; compact multi-segment rollouts are not supported")
 
 
 def graded_reward(sample: Sample, args) -> float | None:
-    if sample.reward is None:
+    # An aborted sample is ungraded whatever its reward field holds: reward
+    # hooks that must not raise mark ABORTED and return a placeholder.
+    if sample.reward is None or sample.status == Sample.Status.ABORTED:
         return None
     reward = sample.get_reward_value(args)
     if reward is None:
@@ -73,6 +84,7 @@ class DupoState:
         samples = flatten_rollouts(observations)
         for sample in samples:
             validate_sample(sample)
+        validate_single_segment(samples)
         if len({sample.index for sample in samples}) != len(samples) or launched_count < len(samples):
             raise ValueError("DUPO observations must have unique sample indices within the launched population")
         observed = {sample.index: sample for sample in samples}
@@ -181,6 +193,11 @@ def step_metrics(config, before, after, groups, rewards):
         metrics.update({f"dupo/type/{key}/{name}": value for name, value in values.items()})
         if after_mean > 0.9 or after_mean < 0.1:
             saturated_mass += mass[key]
+    graded = [reward for reward in rewards.values() if reward is not None]
+    metrics["dupo/graded_reward_mean"] = sum(graded) / len(graded) if graded else 0.0
+    metrics["dupo/graded_pass_rate"] = (
+        sum(reward >= config.threshold for reward in graded) / len(graded) if graded else 0.0
+    )
     metrics["dupo/nonzero_advantage_fraction"] = nonzero / len(accepted) if accepted else 0.0
     metrics["dupo/mean_absolute_advantage"] = total_mass / len(accepted) if accepted else 0.0
     metrics["dupo/saturated_gradient_mass_fraction"] = saturated_mass / total_mass if total_mass else 0.0

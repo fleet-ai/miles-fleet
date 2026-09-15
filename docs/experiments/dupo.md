@@ -6,8 +6,11 @@ groups. Without this flag the GRPO control keeps its existing behavior.
 
 Each input row must have explicit, nonempty `metadata.task_type` and
 `metadata.task_id`. Each rollout must have a unique sample index and one sample;
-compact multi-segment rollouts and adapters are not supported. A missing reward
-is ungraded; finite scalar rewards (or the selected `--reward-key`) are graded.
+a per-rollout `rollout_id` is allowed (the agentic generator sets one), but two
+samples sharing a `rollout_id` (compact multi-segment rollouts) and adapters are
+not supported. A missing reward, or a sample whose status is aborted whatever its
+reward field holds, is ungraded; finite scalar rewards (or the selected
+`--reward-key`) are graded.
 The pass threshold defaults to 1.0. Infrastructure failures must return no reward.
 
 Each type starts at Beta(1,1). For each rollout step, DUPO freezes the current
@@ -68,9 +71,11 @@ resolving the integer start ID; fresh training passes -1 and keeps Beta(1,1).
 `<save>/dupo_steps/<rollout_id>.json` records observed sample IDs, task IDs/types,
 rewards, candidate membership, acceptance, mixed groups, and per-step metrics.
 Logs include each type's parameters/mean before and after updating, keep
-probability, acceptance by task/type, nonzero advantage fraction, mean absolute
-advantage and the absolute-advantage share on types with posterior mean outside
-[0.1,0.9] after updating. Zero total advantage reports zero share.
+probability, acceptance by task/type, the mean reward and pass rate over every
+graded observation of the step (`dupo/graded_reward_mean`, `dupo/graded_pass_rate`,
+the population the accepted set is drawn from), nonzero advantage fraction, mean
+absolute advantage and the absolute-advantage share on types with posterior mean
+outside [0.1,0.9] after updating. Zero total advantage reports zero share.
 Cumulative launched counts include all requests, including ungraded/aborted
 ones, so generated and accepted budgets can be compared separately.
 
