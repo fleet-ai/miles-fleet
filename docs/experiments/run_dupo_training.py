@@ -75,6 +75,8 @@ class ScriptArgs(U.ExecuteTrainConfig):
     dynamic_filter: bool = False
     # Checkpoint cadence in optimizer steps (provisional runs only).
     save_interval: int = 10
+    # Seed for rollout sampling and training (both Miles seeds); change it for a replicate.
+    seed: int = 1234
 
 
 def execute(args):
@@ -119,7 +121,7 @@ def execute(args):
         f"--rollout-function-path miles.rollout.sglang_rollout.generate_rollout {REWARDS[args.reward]} "
         f"--num-rollout {100000 if args.enable_compute_budget else args.estimated_rollout_steps} --rollout-batch-size {args.rollout_batch_size} "
         f"--n-samples-per-prompt {args.n_samples_per_prompt} --rollout-max-response-len {args.max_response_len} --rollout-max-prompt-len {args.max_prompt_len} "
-        f"--global-batch-size {args.rollout_batch_size * args.n_samples_per_prompt} --rollout-seed 1234 --seed 1234 "
+        f"--global-batch-size {args.rollout_batch_size * args.n_samples_per_prompt} --rollout-seed {args.seed} --seed {args.seed} "
         "--rollout-temperature 0.6 --rollout-top-p 0.95 --rollout-top-k 20 "
         "--tensor-model-parallel-size 1 --pipeline-model-parallel-size 1 --context-parallel-size 1 "
         f"--use-dynamic-batch-size --max-tokens-per-gpu {args.max_prompt_len + args.max_response_len + 512} --use-dynamic-global-batch-size "
@@ -157,6 +159,7 @@ def execute(args):
         rollout_batch_size=args.rollout_batch_size,
         dynamic_filter=args.dynamic_filter,
         save_interval=args.save_interval,
+        seed=args.seed,
         max_response_len=args.max_response_len,
         reward=args.reward,
         reward_args=REWARDS[args.reward],
